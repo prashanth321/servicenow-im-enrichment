@@ -5,7 +5,12 @@ All ServiceNow connection parameters, server configuration, and operational
 settings are defined here and read from a .env file or environment variables.
 """
 
+from pathlib import Path
+
 from pydantic_settings import BaseSettings
+
+# Resolve the .env path relative to this file so it works regardless of CWD
+_ENV_FILE = Path(__file__).resolve().parent.parent / ".env"
 
 
 class Settings(BaseSettings):
@@ -28,7 +33,7 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
 
     model_config = {
-        "env_file": ".env",
+        "env_file": str(_ENV_FILE),
         "env_file_encoding": "utf-8",
     }
 

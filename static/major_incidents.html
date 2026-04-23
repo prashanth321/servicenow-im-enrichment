@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ServiceNow Major Incidents</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        :root {
+            --bg: #0a0e1a;
+            --bg-sidebar: #0f1425;
+            --bg-card: #141929;
+            --bg-card-hover: #1a2035;
+            --bg-input: #1a2035;
+            --border: #1e2640;
+            --border-light: #2a3456;
+            --text: #e2e8f0;
+            --text-secondary: #8892b0;
+            --text-muted: #5a6580;
+            --red: #ef4444;
+            --red-bg: rgba(239,68,68,0.1);
+            --red-border: rgba(239,68,68,0.25);
+            --orange: #f97316;
+            --orange-bg: rgba(249,115,22,0.1);
+            --orange-border: rgba(249,115,22,0.25);
+            --green: #22c55e;
+            --green-bg: rgba(34,197,94,0.1);
+            --green-border: rgba(34,197,94,0.25);
+            --blue: #3b82f6;
+            --blue-bg: rgba(59,130,246,0.1);
+            --blue-border: rgba(59,130,246,0.25);
+            --purple: #a855f7;
+            --neutral-bg: rgba(100,116,139,0.1);
+            --neutral-border: rgba(100,116,139,0.25);
+        }
+        body { font-family: 'Inter', system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; display: flex; }
+
+        /* ── Sidebar ── */
+        .sidebar { width: 240px; background: var(--bg-sidebar); border-right: 1px solid var(--border); display: flex; flex-direction: column; position: fixed; top: 0; left: 0; bottom: 0; z-index: 20; }
+        .sidebar-logo { padding: 1.25rem 1.25rem; display: flex; align-items: center; gap: 0.75rem; border-bottom: 1px solid var(--border); }
+        .sidebar-logo svg { width: 28px; height: 28px; color: var(--blue); flex-shrink: 0; }
+        .sidebar-logo span { font-weight: 700; font-size: 0.9rem; color: var(--text); }
+        .sidebar-nav { flex: 1; padding: 0.75rem; display: flex; flex-direction: column; gap: 0.25rem; }
+        .nav-item { display: flex; align-items: center; gap: 0.75rem; padding: 0.625rem 0.875rem; border-radius: 0.5rem; font-size: 0.85rem; font-weight: 500; color: var(--text-secondary); cursor: pointer; transition: all 0.15s; text-decoration: none; position: relative; }
+        .nav-item:hover { background: var(--bg-card); color: var(--text); }
+        .nav-item.active { background: var(--blue-bg); color: var(--blue); }
+        .nav-item.active::before { content: ''; position: absolute; left: 0; top: 50%; transform: translateY(-50%); width: 3px; height: 60%; background: var(--blue); border-radius: 0 2px 2px 0; }
+        .nav-item.disabled { opacity: 0.4; cursor: not-allowed; pointer-events: none; }
+        .nav-badge { margin-left: auto; font-size: 0.65rem; padding: 0.125rem 0.5rem; border-radius: 9999px; background: var(--border); color: var(--text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
+        .nav-item svg { width: 18px; height: 18px; flex-shrink: 0; }
+        .sidebar-footer { padding: 1rem 1.25rem; border-top: 1px solid var(--border); }
+        .sidebar-footer p { font-size: 0.7rem; color: var(--text-muted); }
+
+        /* ── Main ── */
+        .main { margin-left: 240px; flex: 1; min-height: 100vh; display: flex; flex-direction: column; }
+
+        /* ── Header ── */
+        .header { padding: 1.25rem 2rem; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; background: var(--bg-sidebar); position: sticky; top: 0; z-index: 10; }
+        .header-title { font-size: 1.25rem; font-weight: 700; }
+        .header-right { display: flex; align-items: center; gap: 1rem; }
+        .refresh-badge { display: flex; align-items: center; gap: 0.5rem; font-size: 0.75rem; color: var(--text-muted); }
+        .refresh-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); }
+        .header-btn { background: var(--blue); color: #fff; border: none; padding: 0.5rem 1rem; border-radius: 0.5rem; font-size: 0.8rem; font-weight: 600; cursor: pointer; transition: background 0.15s; display: flex; align-items: center; gap: 0.5rem; }
+        .header-btn:hover { background: #2563eb; }
+
+        /* ── Content ── */
+        .content { padding: 1.5rem 2rem; flex: 1; }
+
+        /* ── Summary Cards ── */
+        .summary-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin-bottom: 1.5rem; }
+        .summary-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 0.75rem; padding: 1.25rem; display: flex; align-items: flex-start; justify-content: space-between; transition: border-color 0.2s, transform 0.2s; }
+        .summary-card:hover { transform: translateY(-2px); }
+        .summary-card.red { border-color: var(--red-border); }
+        .summary-card.red:hover { border-color: var(--red); }
+        .summary-card.orange { border-color: var(--orange-border); }
+        .summary-card.orange:hover { border-color: var(--orange); }
+        .summary-card.neutral { border-color: var(--neutral-border); }
+        .summary-card.neutral:hover { border-color: #64748b; }
+        .card-info h3 { font-size: 0.8rem; font-weight: 500; color: var(--text-secondary); margin-bottom: 0.5rem; }
+        .card-count { font-size: 2rem; font-weight: 700; line-height: 1; }
+        .card-count.red { color: var(--red); }
+        .card-count.orange { color: var(--orange); }
+        .card-count.neutral { color: var(--text-secondary); }
+        .card-icon { width: 40px; height: 40px; border-radius: 0.5rem; display: flex; align-items: center; justify-content: center; }
+        .card-icon.red { background: var(--red-bg); color: var(--red); }
+        .card-icon.orange { background: var(--orange-bg); color: var(--orange); }
+        .card-icon.neutral { background: var(--neutral-bg); color: var(--text-muted); }
+        .card-icon svg { width: 20px; height: 20px; }
+        .card-sub { font-size: 0.7rem; color: var(--text-muted); margin-top: 0.35rem; }
+
+        /* ── Tabs ── */
+        .tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); margin-bottom: 1rem; }
+        .tab { padding: 0.75rem 1.25rem; font-size: 0.85rem; font-weight: 500; color: var(--text-muted); cursor: pointer; border-bottom: 2px solid transparent; transition: all 0.15s; user-select: none; }
+        .tab:hover { color: var(--text-secondary); }
+        .tab.active { color: var(--blue); border-bottom-color: var(--blue); }
+        .tab-count { display: inline-block; margin-left: 0.375rem; font-size: 0.7rem; padding: 0.1rem 0.45rem; border-radius: 9999px; background: var(--border); color: var(--text-muted); font-weight: 600; }
+        .tab.active .tab-count { background: var(--blue-bg); color: var(--blue); }
+
+        /* ── Incident List ── */
+        .incident-list { display: flex; flex-direction: column; gap: 0.5rem; }
+        .incident-row { display: grid; grid-template-columns: 130px 56px 1fr 180px 120px 44px; align-items: center; gap: 1rem; padding: 0.875rem 1rem; background: var(--bg-card); border: 1px solid var(--border); border-radius: 0.625rem; cursor: pointer; transition: all 0.15s; }
+        .incident-row:hover { border-color: var(--border-light); background: var(--bg-card-hover); transform: translateX(2px); }
+        .incident-id { font-size: 0.8rem; font-weight: 600; color: var(--blue); }
+        .priority-badge { display: inline-flex; align-items: center; justify-content: center; padding: 0.2rem 0.6rem; border-radius: 0.375rem; font-size: 0.7rem; font-weight: 700; letter-spacing: 0.03em; }
+        .priority-badge.p1 { background: var(--red-bg); color: var(--red); border: 1px solid var(--red-border); }
+        .priority-badge.p2 { background: var(--orange-bg); color: var(--orange); border: 1px solid var(--orange-border); }
+        .priority-badge.p3 { background: var(--blue-bg); color: var(--blue); border: 1px solid var(--blue-border); }
+        .incident-title { font-size: 0.85rem; font-weight: 500; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .incident-team { font-size: 0.78rem; color: var(--text-secondary); display: flex; align-items: center; gap: 0.375rem; }
+        .incident-team svg { width: 14px; height: 14px; color: var(--text-muted); }
+        .incident-time { font-size: 0.75rem; color: var(--text-muted); text-align: right; }
+        .incident-arrow { color: var(--text-muted); transition: color 0.15s; }
+        .incident-row:hover .incident-arrow { color: var(--blue); }
+        .incident-arrow svg { width: 16px; height: 16px; }
+
+        /* ── States ── */
+        .loading-state { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 3rem; gap: 1rem; }
+        .spinner { width: 32px; height: 32px; border: 3px solid var(--border); border-top-color: var(--blue); border-radius: 50%; animation: spin 0.8s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .loading-text { font-size: 0.85rem; color: var(--text-muted); }
+        .empty-state { text-align: center; padding: 3rem; color: var(--text-muted); }
+        .empty-state svg { width: 48px; height: 48px; margin: 0 auto 1rem; opacity: 0.3; }
+        .empty-state p { font-size: 0.9rem; }
+
+        /* ── List Header ── */
+        .list-header { display: grid; grid-template-columns: 130px 56px 1fr 180px 120px 44px; gap: 1rem; padding: 0 1rem 0.5rem; font-size: 0.7rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; }
+
+        /* ── Status indicator ── */
+        .status-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 0.375rem; }
+        .status-dot.active { background: var(--green); box-shadow: 0 0 6px var(--green); }
+        .status-dot.resolved { background: var(--text-muted); }
+
+        /* ── Responsive ── */
+        @media (max-width: 1024px) {
+            .summary-grid { grid-template-columns: 1fr; }
+            .incident-row { grid-template-columns: 100px 48px 1fr 100px; }
+            .incident-team, .incident-arrow { display: none; }
+        }
+        @media (max-width: 768px) {
+            .sidebar { display: none; }
+            .main { margin-left: 0; }
+        }
+    </style>
+</head>
+<body>
+
+<!-- ── Sidebar ── -->
+<aside class="sidebar">
+    <div class="sidebar-logo">
+        <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+        <span>Incident Manager</span>
+    </div>
+    <nav class="sidebar-nav">
+        <a class="nav-item active" href="/">
+            <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+            Incidents
+        </a>
+        <div class="nav-item disabled">
+            <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6m6 0h6m-6 0V9a2 2 0 012-2h2a2 2 0 012 2v10m6 0v-4a2 2 0 00-2-2h-2a2 2 0 00-2 2v4"/></svg>
+            Reports
+            <span class="nav-badge">Soon</span>
+        </div>
+        <div class="nav-item disabled">
+            <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+            Settings
+            <span class="nav-badge">Soon</span>
+        </div>
+    </nav>
+    <div class="sidebar-footer">
+        <p>ServiceNow IM Enrichment v2.0</p>
+    </div>
+</aside>
+
+<!-- ── Main Area ── -->
+<div class="main">
+    <!-- Header -->
+    <header class="header">
+        <h1 class="header-title">ServiceNow Major Incidents</h1>
+        <div class="header-right">
+            <div class="refresh-badge">
+                <span class="refresh-dot"></span>
+                <span id="refreshTimer">Auto-refresh in 30s</span>
+            </div>
+            <button class="header-btn" onclick="refreshAll()">
+                <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                Refresh
+            </button>
+        </div>
+    </header>
+
+    <!-- Content -->
+    <div class="content">
+        <!-- Summary Cards -->
+        <div class="summary-grid">
+            <div class="summary-card red">
+                <div class="card-info">
+                    <h3>Ongoing P1 Incidents</h3>
+                    <div class="card-count red" id="p1Count">
+                        <div class="spinner" style="width:20px;height:20px;border-width:2px"></div>
+                    </div>
+                    <div class="card-sub">Critical — Immediate action required</div>
+                </div>
+                <div class="card-icon red">
+                    <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                </div>
+            </div>
+            <div class="summary-card orange">
+                <div class="card-info">
+                    <h3>Ongoing P2 Incidents</h3>
+                    <div class="card-count orange" id="p2Count">
+                        <div class="spinner" style="width:20px;height:20px;border-width:2px"></div>
+                    </div>
+                    <div class="card-sub">High — Needs attention</div>
+                </div>
+                <div class="card-icon orange">
+                    <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                </div>
+            </div>
+            <div class="summary-card neutral">
+                <div class="card-info">
+                    <h3>Resolved Today</h3>
+                    <div class="card-count neutral" id="resolvedCount">
+                        <div class="spinner" style="width:20px;height:20px;border-width:2px"></div>
+                    </div>
+                    <div class="card-sub">P1 & P2 resolved in the last 24h</div>
+                </div>
+                <div class="card-icon neutral">
+                    <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tabs -->
+        <div class="tabs">
+            <div class="tab active" data-status="ongoing" onclick="switchTab('ongoing')">
+                <span class="status-dot active"></span>Ongoing Incidents<span class="tab-count" id="tabCountOngoing">0</span>
+            </div>
+            <div class="tab" data-status="resolved_today" onclick="switchTab('resolved_today')">
+                Resolved Today<span class="tab-count" id="tabCountResolved">0</span>
+            </div>
+            <div class="tab" data-status="historic" onclick="switchTab('historic')">
+                Historic Incidents<span class="tab-count" id="tabCountHistoric">—</span>
+            </div>
+        </div>
+
+        <!-- List Header -->
+        <div class="list-header" id="listHeader">
+            <span>Incident</span>
+            <span>Priority</span>
+            <span>Title</span>
+            <span>Team</span>
+            <span style="text-align:right">Time</span>
+            <span></span>
+        </div>
+
+        <!-- Incident List -->
+        <div class="incident-list" id="incidentList">
+            <div class="loading-state">
+                <div class="spinner"></div>
+                <div class="loading-text">Loading incidents...</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+const API = '';
+let currentTab = 'ongoing';
+let refreshCountdown = 30;
+let refreshInterval = null;
+let countdownInterval = null;
+
+// ── API Helper ──
+async function api(path) {
+    const res = await fetch(API + path);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.json();
+}
+
+// ── Time helpers ──
+function relativeTime(dateStr) {
+    if (!dateStr) return '';
+    // Handle SN format "2025-12-31 16:47:08"
+    const d = new Date(dateStr.replace(' ', 'T') + (dateStr.includes('Z') ? '' : 'Z'));
+    const now = new Date();
+    const diffMs = now - d;
+    const mins = Math.floor(diffMs / 60000);
+    if (mins < 0) return 'just now';
+    if (mins < 1) return 'just now';
+    if (mins < 60) return mins + ' min ago';
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return hours + (hours === 1 ? ' hour ago' : ' hours ago');
+    const days = Math.floor(hours / 24);
+    if (days < 30) return days + (days === 1 ? ' day ago' : ' days ago');
+    const months = Math.floor(days / 30);
+    return months + (months === 1 ? ' month ago' : ' months ago');
+}
+
+// ── Load Summary ──
+async function loadSummary() {
+    try {
+        const data = await api('/incidents/summary');
+        document.getElementById('p1Count').textContent = data.ongoing_p1;
+        document.getElementById('p2Count').textContent = data.ongoing_p2;
+        document.getElementById('resolvedCount').textContent = data.resolved_today;
+        document.getElementById('tabCountOngoing').textContent = data.ongoing_p1 + data.ongoing_p2;
+        document.getElementById('tabCountResolved').textContent = data.resolved_today;
+    } catch (e) {
+        console.error('Summary load failed:', e);
+        document.getElementById('p1Count').textContent = '—';
+        document.getElementById('p2Count').textContent = '—';
+        document.getElementById('resolvedCount').textContent = '—';
+    }
+}
+
+// ── Load Incident List ──
+async function loadIncidents(status) {
+    const listEl = document.getElementById('incidentList');
+    listEl.innerHTML = `
+        <div class="loading-state">
+            <div class="spinner"></div>
+            <div class="loading-text">Loading incidents...</div>
+        </div>
+    `;
+
+    try {
+        const incidents = await api(`/incidents?status=${status}`);
+
+        if (status === 'historic') {
+            document.getElementById('tabCountHistoric').textContent = incidents.length;
+        }
+
+        if (!incidents.length) {
+            listEl.innerHTML = `
+                <div class="empty-state">
+                    <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                    <p>No incidents found</p>
+                </div>
+            `;
+            return;
+        }
+
+        listEl.innerHTML = incidents.map(inc => {
+            const pClass = inc.priority === '1' ? 'p1' : inc.priority === '2' ? 'p2' : 'p3';
+            const pLabel = 'P' + inc.priority;
+            const timeStr = status === 'ongoing'
+                ? relativeTime(inc.created_at)
+                : relativeTime(inc.resolved_at || inc.created_at);
+            const timeLabel = status === 'ongoing' ? 'Opened ' + timeStr : 'Resolved ' + timeStr;
+
+            return `
+                <div class="incident-row" onclick="window.location.href='/static/dashboard.html#${inc.id}'" title="${inc.title}">
+                    <div class="incident-id">${inc.id}</div>
+                    <div><span class="priority-badge ${pClass}">${pLabel}</span></div>
+                    <div class="incident-title">${escapeHtml(inc.title)}</div>
+                    <div class="incident-team">
+                        <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                        ${escapeHtml(inc.team)}
+                    </div>
+                    <div class="incident-time">${timeLabel}</div>
+                    <div class="incident-arrow">
+                        <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    } catch (e) {
+        console.error('Incident list load failed:', e);
+        listEl.innerHTML = `
+            <div class="empty-state">
+                <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                <p>Failed to load incidents</p>
+            </div>
+        `;
+    }
+}
+
+function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str || '';
+    return div.innerHTML;
+}
+
+// ── Tabs ──
+function switchTab(status) {
+    currentTab = status;
+    document.querySelectorAll('.tab').forEach(t => {
+        t.classList.toggle('active', t.dataset.status === status);
+    });
+    loadIncidents(status);
+}
+
+// ── Refresh ──
+function refreshAll() {
+    refreshCountdown = 30;
+    loadSummary();
+    loadIncidents(currentTab);
+}
+
+function startAutoRefresh() {
+    // Countdown display
+    countdownInterval = setInterval(() => {
+        refreshCountdown--;
+        const timerEl = document.getElementById('refreshTimer');
+        if (refreshCountdown <= 0) {
+            timerEl.textContent = 'Refreshing...';
+        } else {
+            timerEl.textContent = `Auto-refresh in ${refreshCountdown}s`;
+        }
+    }, 1000);
+
+    // Actual refresh
+    refreshInterval = setInterval(() => {
+        refreshCountdown = 30;
+        loadSummary();
+        loadIncidents(currentTab);
+    }, 30000);
+}
+
+// ── Init ──
+loadSummary();
+loadIncidents('ongoing');
+startAutoRefresh();
+</script>
+</body>
+</html>

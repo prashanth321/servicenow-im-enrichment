@@ -15,9 +15,13 @@ from __future__ import annotations
 import asyncio
 from contextlib import asynccontextmanager
 
+from pathlib import Path
+
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from config.settings import settings
 from models.schemas import (
@@ -228,10 +232,63 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="ServiceNow IM Enrichment Service",
-    description="Enriches P2 incidents with CMDB, on-call, app, and impact data.",
-    version="1.0.0",
+    description="Enriches P2 incidents with CMDB, on-call, app, impact data, and full IM dashboard APIs.",
+    version="2.0.0",
     lifespan=lifespan,
 )
+
+# CORS — allow the React dashboard frontend to call the API
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Register the major incidents routes (BEFORE dashboard to avoid path conflicts)
+from routes.incidents_routes import router as incidents_router  # noqa: E402
+app.include_router(incidents_router)
+
+# Register the dashboard routes (converted from React IM Dashboard)
+from routes.dashboard_routes import router as dashboard_router  # noqa: E402
+app.include_router(dashboard_router)
+
+# Serve the static dashboard UI
+_STATIC_DIR = Path(__file__).resolve().parent / "static"
+app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
+
+
+# ---------------------------------------------------------------------------
+# Dashboard UI & P2 incident list
+# ---------------------------------------------------------------------------
+
+@app.get("/", include_in_schema=False)
+async def serve_dashboard():
+    """Serve the Major Incidents Dashboard at the root URL."""
+    return FileResponse(str(_STATIC_DIR / "major_incidents.html"))
+
+
+@app.get("/dashboard", include_in_schema=False)
+async def serve_im_dashboard():
+    """Serve the IM Dashboard HTML page."""
+    return FileResponse(str(_STATIC_DIR / "dashboard.html"))
+
+
+@app.get("/incidents/list/active-p2")
+async def list_active_p2():
+    """Return active P2 incidents for the dashboard selector dropdown."""
+    async with ServiceNowClient() as client:
+        response = await client.get(
+            "/api/now/table/incident",
+            params={
+                "sysparm_query": "priority=2^active=true^ORDERBYDESCopened_at",
+                "sysparm_fields": "number,short_description,state,assigned_to",
+                "sysparm_display_value": "true",
+                "sysparm_limit": "25",
+            },
+        )
+        return response.json().get("result", [])
 
 
 # ---------------------------------------------------------------------------

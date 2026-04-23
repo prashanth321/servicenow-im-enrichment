@@ -1,0 +1,844 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Incident Manager Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        :root {
+            --bg-primary: #0f172a;
+            --bg-secondary: #1e293b;
+            --bg-card: #1e293b;
+            --bg-hover: #334155;
+            --border: #334155;
+            --text-primary: #f1f5f9;
+            --text-secondary: #94a3b8;
+            --text-muted: #64748b;
+            --accent-red: #ef4444;
+            --accent-orange: #f97316;
+            --accent-amber: #f59e0b;
+            --accent-green: #22c55e;
+            --accent-blue: #3b82f6;
+            --accent-purple: #a855f7;
+        }
+        body { background: var(--bg-primary); color: var(--text-primary); font-family: 'Inter', system-ui, sans-serif; }
+        .card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 0.75rem; }
+        .card-header { padding: 1rem 1.25rem; border-bottom: 1px solid var(--border); }
+        .card-body { padding: 1.25rem; }
+        .badge { padding: 0.125rem 0.625rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 600; }
+        .badge-p1 { background: #7f1d1d; color: #fca5a5; }
+        .badge-p2 { background: #7c2d12; color: #fdba74; }
+        .badge-p3 { background: #78350f; color: #fde68a; }
+        .badge-p4 { background: #1e3a5f; color: #93c5fd; }
+        .badge-green { background: #14532d; color: #86efac; }
+        .badge-red { background: #7f1d1d; color: #fca5a5; }
+        .badge-amber { background: #78350f; color: #fde68a; }
+        .badge-blue { background: #1e3a5f; color: #93c5fd; }
+        .badge-gray { background: #374151; color: #9ca3af; }
+        .btn { padding: 0.5rem 1rem; border-radius: 0.5rem; font-size: 0.875rem; font-weight: 500; cursor: pointer; transition: all 0.15s; border: none; }
+        .btn-primary { background: var(--accent-blue); color: white; }
+        .btn-primary:hover { background: #2563eb; }
+        .btn-danger { background: var(--accent-red); color: white; }
+        .btn-danger:hover { background: #dc2626; }
+        .btn-ghost { background: transparent; color: var(--text-secondary); border: 1px solid var(--border); }
+        .btn-ghost:hover { background: var(--bg-hover); }
+        .btn-sm { padding: 0.25rem 0.75rem; font-size: 0.75rem; }
+        .input { background: var(--bg-primary); border: 1px solid var(--border); color: var(--text-primary); padding: 0.5rem 0.75rem; border-radius: 0.5rem; width: 100%; font-size: 0.875rem; }
+        .input:focus { outline: none; border-color: var(--accent-blue); box-shadow: 0 0 0 2px rgba(59,130,246,0.2); }
+        textarea.input { min-height: 80px; resize: vertical; }
+        .sla-bar { height: 6px; border-radius: 3px; background: #374151; overflow: hidden; }
+        .sla-fill { height: 100%; border-radius: 3px; transition: width 0.3s; }
+        .tab { padding: 0.5rem 1rem; cursor: pointer; border-bottom: 2px solid transparent; color: var(--text-secondary); font-size: 0.875rem; }
+        .tab.active { color: var(--accent-blue); border-bottom-color: var(--accent-blue); }
+        .tab:hover { color: var(--text-primary); }
+        .grid-layout { display: grid; grid-template-columns: 320px 1fr 340px; gap: 1rem; height: calc(100vh - 160px); }
+        .panel { overflow-y: auto; max-height: 100%; }
+        .panel::-webkit-scrollbar { width: 4px; }
+        .panel::-webkit-scrollbar-thumb { background: #475569; border-radius: 2px; }
+        @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
+        .pulse { animation: pulse 2s ease-in-out infinite; }
+        .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 50; }
+        .modal { background: var(--bg-card); border: 1px solid var(--border); border-radius: 0.75rem; max-width: 600px; width: 90%; max-height: 80vh; overflow-y: auto; }
+        .hidden { display: none !important; }
+        .loading { display: flex; align-items: center; justify-content: center; padding: 2rem; color: var(--text-muted); }
+        .separator { height: 1px; background: var(--border); margin: 0.75rem 0; }
+        select.input { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 0.5rem center; padding-right: 2rem; }
+    </style>
+</head>
+<body class="min-h-screen">
+
+<!-- Incident Selector Bar -->
+<div class="border-b border-[#334155] bg-[#1e293b] px-6 py-3 flex items-center gap-4">
+    <div class="flex items-center gap-2">
+        <svg class="w-6 h-6 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+        <span class="font-bold text-lg">IM Dashboard</span>
+    </div>
+    <div class="flex items-center gap-2 ml-4">
+        <label class="text-sm text-slate-400">Incident:</label>
+        <select id="incidentSelect" class="input" style="width:200px" onchange="loadDashboard()">
+            <option value="">Select incident...</option>
+        </select>
+        <button class="btn btn-ghost btn-sm" onclick="refreshIncidentList()">↻ Refresh</button>
+    </div>
+    <div id="headerInfo" class="ml-auto flex items-center gap-3 text-sm"></div>
+</div>
+
+<!-- Incident Header -->
+<div id="incidentHeader" class="px-6 py-3 bg-[#0f172a] border-b border-[#334155] hidden">
+</div>
+
+<!-- Main 3-Column Layout -->
+<div class="px-4 py-3">
+    <div class="grid-layout" id="mainLayout">
+        <!-- Left Sidebar -->
+        <div class="panel flex flex-col gap-3">
+            <!-- SLA Clocks -->
+            <div class="card">
+                <div class="card-header flex items-center justify-between">
+                    <span class="font-semibold text-sm">⏱ SLA Clocks</span>
+                    <button class="btn btn-ghost btn-sm" onclick="showAddSLAModal()">+ Add</button>
+                </div>
+                <div class="card-body space-y-3" id="slaClocks">
+                    <div class="loading">Select an incident</div>
+                </div>
+            </div>
+            <!-- Handover -->
+            <div class="card">
+                <div class="card-header flex items-center justify-between">
+                    <span class="font-semibold text-sm">🔄 Shift Handover</span>
+                </div>
+                <div class="card-body" id="handoverPanel">
+                    <div class="loading">Select an incident</div>
+                </div>
+            </div>
+            <!-- Priority Tracker -->
+            <div class="card">
+                <div class="card-header"><span class="font-semibold text-sm">📈 Priority Escalation</span></div>
+                <div class="card-body" id="priorityTracker">
+                    <div class="loading">Select an incident</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Center Workspace -->
+        <div class="panel flex flex-col gap-3">
+            <!-- Tabs -->
+            <div class="card">
+                <div class="flex border-b border-[#334155]">
+                    <div class="tab active" data-tab="notes" onclick="switchTab('notes')">📝 Notes</div>
+                    <div class="tab" data-tab="actions" onclick="switchTab('actions')">☑ Actions</div>
+                    <div class="tab" data-tab="changes" onclick="switchTab('changes')">🔧 Changes</div>
+                    <div class="tab" data-tab="comms" onclick="switchTab('comms')">📨 Communications</div>
+                </div>
+                <!-- Notes Tab -->
+                <div class="card-body tab-content" id="tab-notes">
+                    <div class="flex gap-2 mb-3">
+                        <input id="noteInput" class="input" placeholder="Add a note... (Enter to submit)">
+                        <button class="btn btn-primary btn-sm" onclick="addNote()">Add</button>
+                    </div>
+                    <div id="notesList" class="space-y-2"></div>
+                </div>
+                <!-- Actions Tab -->
+                <div class="card-body tab-content hidden" id="tab-actions">
+                    <div class="grid grid-cols-4 gap-2 mb-3">
+                        <input id="actionDesc" class="input" placeholder="Description">
+                        <input id="actionTeam" class="input" placeholder="Team">
+                        <input id="actionAssignee" class="input" placeholder="Assignee">
+                        <button class="btn btn-primary btn-sm" onclick="addAction()">Add</button>
+                    </div>
+                    <div id="actionsList" class="space-y-2"></div>
+                </div>
+                <!-- Changes Tab -->
+                <div class="card-body tab-content hidden" id="tab-changes">
+                    <div class="grid grid-cols-4 gap-2 mb-3">
+                        <input id="changeDesc" class="input" placeholder="Change description">
+                        <input id="changeTeam" class="input" placeholder="Owner team">
+                        <input id="changeAssignee" class="input" placeholder="Assignee">
+                        <button class="btn btn-primary btn-sm" onclick="addChange()">Add</button>
+                    </div>
+                    <div id="changesList" class="space-y-2"></div>
+                </div>
+                <!-- Comms Tab -->
+                <div class="card-body tab-content hidden" id="tab-comms">
+                    <button class="btn btn-primary btn-sm mb-3" onclick="showCommModal()">📧 Send Update</button>
+                    <div id="commsList" class="space-y-2"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Sidebar -->
+        <div class="panel flex flex-col gap-3">
+            <!-- Stakeholders -->
+            <div class="card">
+                <div class="card-header flex items-center justify-between">
+                    <span class="font-semibold text-sm">👥 Stakeholders</span>
+                    <button class="btn btn-ghost btn-sm" onclick="showAddStakeholderModal()">+ Add</button>
+                </div>
+                <div class="card-body space-y-2" id="stakeholdersList">
+                    <div class="text-sm text-slate-500">No stakeholders</div>
+                </div>
+            </div>
+            <!-- Vendor -->
+            <div class="card">
+                <div class="card-header"><span class="font-semibold text-sm">🏢 Vendor</span></div>
+                <div class="card-body text-sm" id="vendorPanel">
+                    <div class="loading">Select an incident</div>
+                </div>
+            </div>
+            <!-- Resolution -->
+            <div class="card">
+                <div class="card-header flex items-center justify-between">
+                    <span class="font-semibold text-sm">✅ Resolution</span>
+                </div>
+                <div class="card-body" id="resolutionPanel">
+                    <button class="btn btn-danger w-full" onclick="showResolveModal()" id="resolveBtn" disabled>Resolve Incident</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modals -->
+<!-- Communication Modal -->
+<div id="commModal" class="modal-overlay hidden" onclick="if(event.target===this)this.classList.add('hidden')">
+    <div class="modal">
+        <div class="card-header flex items-center justify-between">
+            <span class="font-semibold">Send Communication</span>
+            <button class="btn btn-ghost btn-sm" onclick="document.getElementById('commModal').classList.add('hidden')">✕</button>
+        </div>
+        <div class="card-body space-y-3">
+            <select id="commType" class="input" onchange="loadTemplate()">
+                <option value="status_update">Status Update</option>
+                <option value="customer_impact">Customer Impact</option>
+                <option value="escalation">Escalation</option>
+                <option value="resolution_notice">Resolution Notice</option>
+            </select>
+            <input id="commSubject" class="input" placeholder="Subject">
+            <textarea id="commBody" class="input" rows="6" placeholder="Message body"></textarea>
+            <input id="commRecipients" class="input" placeholder="Recipients (comma-separated emails)">
+            <div class="flex justify-end gap-2">
+                <button class="btn btn-ghost" onclick="document.getElementById('commModal').classList.add('hidden')">Cancel</button>
+                <button class="btn btn-primary" onclick="sendComm()">Send</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add Stakeholder Modal -->
+<div id="stakeholderModal" class="modal-overlay hidden" onclick="if(event.target===this)this.classList.add('hidden')">
+    <div class="modal">
+        <div class="card-header flex items-center justify-between">
+            <span class="font-semibold">Add Stakeholder</span>
+            <button class="btn btn-ghost btn-sm" onclick="document.getElementById('stakeholderModal').classList.add('hidden')">✕</button>
+        </div>
+        <div class="card-body space-y-3">
+            <input id="shName" class="input" placeholder="Name">
+            <input id="shRole" class="input" placeholder="Role">
+            <input id="shTeam" class="input" placeholder="Team">
+            <input id="shEmail" class="input" placeholder="Email">
+            <div class="flex justify-end gap-2">
+                <button class="btn btn-ghost" onclick="document.getElementById('stakeholderModal').classList.add('hidden')">Cancel</button>
+                <button class="btn btn-primary" onclick="addStakeholder()">Add</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add SLA Modal -->
+<div id="slaModal" class="modal-overlay hidden" onclick="if(event.target===this)this.classList.add('hidden')">
+    <div class="modal">
+        <div class="card-header flex items-center justify-between">
+            <span class="font-semibold">Add SLA Clock</span>
+            <button class="btn btn-ghost btn-sm" onclick="document.getElementById('slaModal').classList.add('hidden')">✕</button>
+        </div>
+        <div class="card-body space-y-3">
+            <input id="slaLabel" class="input" placeholder="Label (e.g. Customer Update SLA)">
+            <input id="slaMinutes" class="input" type="number" placeholder="Target minutes">
+            <div class="flex justify-end gap-2">
+                <button class="btn btn-ghost" onclick="document.getElementById('slaModal').classList.add('hidden')">Cancel</button>
+                <button class="btn btn-primary" onclick="addSLAClock()">Add</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Handover Modal -->
+<div id="handoverModal" class="modal-overlay hidden" onclick="if(event.target===this)this.classList.add('hidden')">
+    <div class="modal">
+        <div class="card-header flex items-center justify-between">
+            <span class="font-semibold">Shift Handover Checklist</span>
+            <button class="btn btn-ghost btn-sm" onclick="document.getElementById('handoverModal').classList.add('hidden')">✕</button>
+        </div>
+        <div class="card-body space-y-3">
+            <p class="text-sm text-slate-400 mb-2">Complete all items before transferring ownership:</p>
+            <label class="flex items-center gap-2 text-sm"><input type="checkbox" id="hc1"> Current status reviewed with incoming manager</label>
+            <label class="flex items-center gap-2 text-sm"><input type="checkbox" id="hc2"> Open action items transferred</label>
+            <label class="flex items-center gap-2 text-sm"><input type="checkbox" id="hc3"> Stakeholder communications shared</label>
+            <label class="flex items-center gap-2 text-sm"><input type="checkbox" id="hc4"> Vendor status confirmed</label>
+            <label class="flex items-center gap-2 text-sm"><input type="checkbox" id="hc5"> Escalation points identified</label>
+            <div class="separator"></div>
+            <input id="handoverTarget" class="input" placeholder="Transfer to (manager name)">
+            <div class="flex justify-end gap-2">
+                <button class="btn btn-ghost" onclick="document.getElementById('handoverModal').classList.add('hidden')">Cancel</button>
+                <button class="btn btn-primary" onclick="doHandover()">Confirm Transfer</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Resolve Modal -->
+<div id="resolveModal" class="modal-overlay hidden" onclick="if(event.target===this)this.classList.add('hidden')">
+    <div class="modal">
+        <div class="card-header flex items-center justify-between">
+            <span class="font-semibold">Resolve Incident</span>
+            <button class="btn btn-ghost btn-sm" onclick="document.getElementById('resolveModal').classList.add('hidden')">✕</button>
+        </div>
+        <div class="card-body space-y-3">
+            <div>
+                <label class="text-sm text-slate-400">Resolution Notes</label>
+                <textarea id="resolveNotes" class="input" rows="4" placeholder="Describe how the incident was resolved..."></textarea>
+            </div>
+            <div>
+                <label class="text-sm text-slate-400">Close Code</label>
+                <select id="resolveCode" class="input">
+                    <option value="Solved (Permanently)">Solved (Permanently)</option>
+                    <option value="Solved (Workaround)">Solved (Workaround)</option>
+                    <option value="Not Solved (Not Reproducible)">Not Solved (Not Reproducible)</option>
+                    <option value="Closed/Resolved by Caller">Closed/Resolved by Caller</option>
+                </select>
+            </div>
+            <button class="btn btn-ghost w-full" onclick="generateSummary()">🤖 Generate AI Summary</button>
+            <div id="aiSummary" class="hidden bg-[#0f172a] p-3 rounded-lg text-sm space-y-2"></div>
+            <div class="flex justify-end gap-2">
+                <button class="btn btn-ghost" onclick="document.getElementById('resolveModal').classList.add('hidden')">Cancel</button>
+                <button class="btn btn-danger" onclick="resolveIncident()">Resolve in ServiceNow</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+const API = '';
+let currentIncident = null;
+let dashboardData = null;
+let slaInterval = null;
+
+// ── Helpers ──
+async function api(path, opts = {}) {
+    const res = await fetch(API + path, {
+        headers: { 'Content-Type': 'application/json', ...opts.headers },
+        ...opts,
+    });
+    if (!res.ok && res.status !== 204) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || res.statusText);
+    }
+    if (res.status === 204) return null;
+    return res.json();
+}
+
+function timeAgo(dateStr) {
+    if (!dateStr) return '';
+    const d = new Date(dateStr);
+    const now = new Date();
+    const diff = Math.floor((now - d) / 60000);
+    if (diff < 1) return 'just now';
+    if (diff < 60) return diff + 'm ago';
+    if (diff < 1440) return Math.floor(diff / 60) + 'h ago';
+    return Math.floor(diff / 1440) + 'd ago';
+}
+
+function fmtSeconds(s) {
+    const neg = s < 0;
+    s = Math.abs(s);
+    const m = Math.floor(s / 60);
+    const sec = s % 60;
+    return (neg ? '-' : '') + m + ':' + String(sec).padStart(2, '0');
+}
+
+function priorityBadge(p) {
+    const cls = { '1': 'badge-p1', '2': 'badge-p2', '3': 'badge-p3', '4': 'badge-p4' }[p] || 'badge-gray';
+    return `<span class="badge ${cls}">P${p}</span>`;
+}
+
+function stateBadge(s) {
+    const labels = { 'new': 'New', 'in_progress': 'In Progress', 'on_hold': 'On Hold', 'resolved': 'Resolved', 'closed': 'Closed' };
+    const cls = { 'new': 'badge-blue', 'in_progress': 'badge-green', 'on_hold': 'badge-amber', 'resolved': 'badge-gray', 'closed': 'badge-gray' }[s] || 'badge-gray';
+    return `<span class="badge ${cls}">${labels[s] || s}</span>`;
+}
+
+// ── Load active P2 incidents into the selector ──
+async function refreshIncidentList() {
+    try {
+        const res = await fetch(API + '/incidents/list/active-p2');
+        if (res.status === 404) {
+            // Fallback: use the ServiceNow query via a custom endpoint we'll handle
+            const r2 = await fetch(API + '/health');
+            if (r2.ok) {
+                // Try loading known incidents
+                const sel = document.getElementById('incidentSelect');
+                if (sel.options.length <= 1) {
+                    ['INC0000049','INC0000044','INC0000027','INC0000019','INC0010004'].forEach(n => {
+                        const opt = document.createElement('option');
+                        opt.value = n; opt.text = n;
+                        sel.add(opt);
+                    });
+                }
+            }
+            return;
+        }
+        const data = await res.json();
+        const sel = document.getElementById('incidentSelect');
+        sel.innerHTML = '<option value="">Select incident...</option>';
+        data.forEach(inc => {
+            const opt = document.createElement('option');
+            opt.value = inc.number; opt.text = `${inc.number} — ${inc.short_description || ''}`.substring(0, 60);
+            sel.add(opt);
+        });
+    } catch {
+        // Fallback hardcoded P2 list
+        const sel = document.getElementById('incidentSelect');
+        if (sel.options.length <= 1) {
+            ['INC0000049','INC0000044','INC0000027','INC0000019','INC0010004'].forEach(n => {
+                const opt = document.createElement('option');
+                opt.value = n; opt.text = n;
+                sel.add(opt);
+            });
+        }
+    }
+}
+
+// ── Load full dashboard ──
+async function loadDashboard() {
+    const num = document.getElementById('incidentSelect').value;
+    if (!num) return;
+    currentIncident = num;
+
+    try {
+        dashboardData = await api(`/incidents/${num}/dashboard`);
+        renderHeader(dashboardData.incident);
+        renderSLAClocks(dashboardData.sla_clocks);
+        renderStakeholders(dashboardData.stakeholders);
+        renderComms(dashboardData.communications);
+        renderNotes(dashboardData.notes);
+        renderActions(dashboardData.action_items);
+        renderChanges(dashboardData.changes);
+        renderVendor(dashboardData.vendor_info);
+        renderPriority(dashboardData.priority_history);
+        renderHandover();
+        renderResolution(dashboardData.resolution);
+        document.getElementById('resolveBtn').disabled = false;
+        document.getElementById('incidentHeader').classList.remove('hidden');
+        startSLATicker();
+    } catch (e) {
+        alert('Failed to load dashboard: ' + e.message);
+    }
+}
+
+// ── Render: Incident Header ──
+function renderHeader(inc) {
+    const h = document.getElementById('incidentHeader');
+    h.innerHTML = `
+        <div class="flex items-center justify-between flex-wrap gap-3">
+            <div class="flex items-center gap-3">
+                <span class="text-xl font-bold">${inc.number}</span>
+                ${priorityBadge(inc.priority)}
+                ${stateBadge(inc.state)}
+            </div>
+            <div class="text-sm text-slate-400">
+                ${inc.ci_name ? `<span class="mr-3">🖥 ${inc.ci_name}</span>` : ''}
+                ${inc.assignment_group ? `<span class="mr-3">👥 ${inc.assignment_group}</span>` : ''}
+                ${inc.assigned_to ? `<span>👤 ${inc.assigned_to}</span>` : ''}
+            </div>
+        </div>
+        <p class="text-sm mt-1">${inc.short_description}</p>
+        ${inc.business_impact ? `<div class="mt-1"><span class="badge ${inc.business_impact === 'High' ? 'badge-red' : inc.business_impact === 'Medium' ? 'badge-amber' : 'badge-green'}">Impact: ${inc.business_impact}</span></div>` : ''}
+    `;
+    document.getElementById('headerInfo').innerHTML = `
+        <span class="text-slate-400">${inc.assigned_to ? 'Assigned: ' + inc.assigned_to : 'Unassigned'}</span>
+    `;
+}
+
+// ── Render: SLA Clocks ──
+function renderSLAClocks(clocks) {
+    const el = document.getElementById('slaClocks');
+    if (!clocks || !clocks.length) { el.innerHTML = '<div class="text-sm text-slate-500">No SLA clocks</div>'; return; }
+    el.innerHTML = clocks.map(c => {
+        const pct = Math.max(0, Math.min(100, (c.remaining_seconds / (c.target_minutes * 60)) * 100));
+        const breached = c.status === 'breached' || c.remaining_seconds <= 0;
+        const paused = c.status === 'paused';
+        const color = breached ? 'bg-red-500' : pct < 25 ? 'bg-amber-500' : 'bg-green-500';
+        return `
+            <div class="p-2 rounded-lg bg-[#0f172a] ${breached ? 'pulse' : ''}">
+                <div class="flex items-center justify-between mb-1">
+                    <span class="text-xs font-medium">${c.label}</span>
+                    <span class="text-xs font-mono ${breached ? 'text-red-400' : 'text-slate-300'}" id="sla-time-${c.id}">${fmtSeconds(c.remaining_seconds)}</span>
+                </div>
+                <div class="sla-bar">
+                    <div class="sla-fill ${color}" style="width:${pct}%" id="sla-bar-${c.id}"></div>
+                </div>
+                <div class="flex justify-between mt-1">
+                    <span class="badge ${breached ? 'badge-red' : paused ? 'badge-amber' : 'badge-green'} text-[10px]">${breached ? 'BREACHED' : paused ? 'PAUSED' : 'RUNNING'}</span>
+                    <div class="flex gap-1">
+                        ${c.status === 'running' ? `<button class="text-[10px] text-slate-400 hover:text-white" onclick="toggleSLA('${c.id}','paused')">⏸</button>` : ''}
+                        ${c.status === 'paused' ? `<button class="text-[10px] text-slate-400 hover:text-white" onclick="toggleSLA('${c.id}','running')">▶</button>` : ''}
+                        <button class="text-[10px] text-slate-400 hover:text-red-400" onclick="deleteSLA('${c.id}')">✕</button>
+                    </div>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+function startSLATicker() {
+    if (slaInterval) clearInterval(slaInterval);
+    slaInterval = setInterval(async () => {
+        if (!currentIncident) return;
+        try {
+            const clocks = await api(`/incidents/${currentIncident}/sla/tick?seconds=1`, { method: 'POST' });
+            // Update in-place
+            clocks.forEach(c => {
+                const timeEl = document.getElementById('sla-time-' + c.id);
+                if (timeEl) timeEl.textContent = fmtSeconds(c.remaining_seconds);
+                const barEl = document.getElementById('sla-bar-' + c.id);
+                if (barEl) {
+                    const pct = Math.max(0, Math.min(100, (c.remaining_seconds / (c.target_minutes * 60)) * 100));
+                    barEl.style.width = pct + '%';
+                }
+            });
+        } catch {}
+    }, 1000);
+}
+
+async function toggleSLA(id, status) {
+    await api(`/incidents/${currentIncident}/sla/${id}?status=${status}`, { method: 'PATCH' });
+    const clocks = await api(`/incidents/${currentIncident}/sla`);
+    renderSLAClocks(clocks);
+}
+async function deleteSLA(id) {
+    await api(`/incidents/${currentIncident}/sla/${id}`, { method: 'DELETE' });
+    const clocks = await api(`/incidents/${currentIncident}/sla`);
+    renderSLAClocks(clocks);
+}
+function showAddSLAModal() { document.getElementById('slaModal').classList.remove('hidden'); }
+async function addSLAClock() {
+    const label = document.getElementById('slaLabel').value;
+    const mins = parseInt(document.getElementById('slaMinutes').value);
+    if (!label || !mins) return;
+    await api(`/incidents/${currentIncident}/sla`, { method: 'POST', body: JSON.stringify({ label, target_minutes: mins }) });
+    document.getElementById('slaModal').classList.add('hidden');
+    const clocks = await api(`/incidents/${currentIncident}/sla`);
+    renderSLAClocks(clocks);
+}
+
+// ── Render: Stakeholders ──
+function renderStakeholders(list) {
+    const el = document.getElementById('stakeholdersList');
+    if (!list || !list.length) { el.innerHTML = '<div class="text-sm text-slate-500">No stakeholders added</div>'; return; }
+    el.innerHTML = list.map(s => `
+        <div class="flex items-center justify-between p-2 rounded bg-[#0f172a]">
+            <div>
+                <div class="text-sm font-medium">${s.name}</div>
+                <div class="text-xs text-slate-400">${s.role}${s.team ? ' · ' + s.team : ''}</div>
+            </div>
+            <button class="text-xs text-slate-500 hover:text-red-400" onclick="removeStakeholder('${s.id}')">✕</button>
+        </div>
+    `).join('');
+}
+function showAddStakeholderModal() { document.getElementById('stakeholderModal').classList.remove('hidden'); }
+async function addStakeholder() {
+    const data = { name: document.getElementById('shName').value, role: document.getElementById('shRole').value, team: document.getElementById('shTeam').value, email: document.getElementById('shEmail').value };
+    if (!data.name) return;
+    await api(`/incidents/${currentIncident}/stakeholders`, { method: 'POST', body: JSON.stringify(data) });
+    document.getElementById('stakeholderModal').classList.add('hidden');
+    const list = await api(`/incidents/${currentIncident}/stakeholders`);
+    renderStakeholders(list);
+}
+async function removeStakeholder(id) {
+    await api(`/incidents/${currentIncident}/stakeholders/${id}`, { method: 'DELETE' });
+    const list = await api(`/incidents/${currentIncident}/stakeholders`);
+    renderStakeholders(list);
+}
+
+// ── Render: Communications ──
+function renderComms(list) {
+    const el = document.getElementById('commsList');
+    if (!list || !list.length) { el.innerHTML = '<div class="text-sm text-slate-500">No communications sent</div>'; return; }
+    el.innerHTML = list.map(c => `
+        <div class="p-2 rounded bg-[#0f172a]">
+            <div class="flex items-center justify-between">
+                <span class="text-sm font-medium">${c.subject}</span>
+                <span class="text-xs text-slate-500">${timeAgo(c.sent_at)}</span>
+            </div>
+            <div class="text-xs text-slate-400 mt-1">${c.comm_type} · ${c.sent_by}</div>
+        </div>
+    `).join('');
+}
+function showCommModal() { document.getElementById('commModal').classList.remove('hidden'); loadTemplate(); }
+async function loadTemplate() {
+    if (!currentIncident) return;
+    const type = document.getElementById('commType').value;
+    try {
+        const tpl = await api(`/incidents/${currentIncident}/comms/template?comm_type=${type}`);
+        document.getElementById('commSubject').value = tpl.subject;
+        document.getElementById('commBody').value = tpl.body;
+    } catch {}
+}
+async function sendComm() {
+    const data = {
+        comm_type: document.getElementById('commType').value,
+        subject: document.getElementById('commSubject').value,
+        body: document.getElementById('commBody').value,
+        recipients: document.getElementById('commRecipients').value.split(',').map(s => s.trim()).filter(Boolean),
+    };
+    await api(`/incidents/${currentIncident}/comms`, { method: 'POST', body: JSON.stringify(data) });
+    document.getElementById('commModal').classList.add('hidden');
+    const list = await api(`/incidents/${currentIncident}/comms`);
+    renderComms(list);
+}
+
+// ── Render: Notes ──
+function renderNotes(list) {
+    const el = document.getElementById('notesList');
+    if (!list || !list.length) { el.innerHTML = '<div class="text-sm text-slate-500">No notes yet</div>'; return; }
+    el.innerHTML = list.map(n => `
+        <div class="p-2 rounded bg-[#0f172a] flex justify-between">
+            <div>
+                <p class="text-sm">${n.content}</p>
+                <span class="text-xs text-slate-500">${n.author ? n.author + ' · ' : ''}${timeAgo(n.created_at)}</span>
+            </div>
+            <button class="text-xs text-slate-500 hover:text-red-400 ml-2" onclick="deleteNote('${n.id}')">✕</button>
+        </div>
+    `).join('');
+}
+async function addNote() {
+    const input = document.getElementById('noteInput');
+    if (!input.value.trim()) return;
+    await api(`/incidents/${currentIncident}/notes`, { method: 'POST', body: JSON.stringify({ content: input.value, author: 'IM Dashboard' }) });
+    input.value = '';
+    const list = await api(`/incidents/${currentIncident}/notes`);
+    renderNotes(list);
+}
+async function deleteNote(id) {
+    await api(`/incidents/${currentIncident}/notes/${id}`, { method: 'DELETE' });
+    const list = await api(`/incidents/${currentIncident}/notes`);
+    renderNotes(list);
+}
+
+// ── Render: Action Items ──
+function renderActions(list) {
+    const el = document.getElementById('actionsList');
+    if (!list || !list.length) { el.innerHTML = '<div class="text-sm text-slate-500">No action items</div>'; return; }
+    el.innerHTML = list.map(a => `
+        <div class="p-2 rounded bg-[#0f172a] flex items-start gap-2">
+            <input type="checkbox" ${a.status === 'completed' ? 'checked' : ''} onchange="toggleAction('${a.id}', this.checked)" class="mt-1">
+            <div class="flex-1">
+                <p class="text-sm ${a.status === 'completed' ? 'line-through text-slate-500' : ''}">${a.description}</p>
+                <span class="text-xs text-slate-500">${a.team ? a.team + ' · ' : ''}${a.assignee || 'Unassigned'}</span>
+            </div>
+            <button class="text-xs text-slate-500 hover:text-red-400" onclick="deleteAction('${a.id}')">✕</button>
+        </div>
+    `).join('');
+}
+async function addAction() {
+    const data = { description: document.getElementById('actionDesc').value, team: document.getElementById('actionTeam').value, assignee: document.getElementById('actionAssignee').value };
+    if (!data.description) return;
+    await api(`/incidents/${currentIncident}/actions`, { method: 'POST', body: JSON.stringify(data) });
+    document.getElementById('actionDesc').value = '';
+    const list = await api(`/incidents/${currentIncident}/actions`);
+    renderActions(list);
+}
+async function toggleAction(id, completed) {
+    await api(`/incidents/${currentIncident}/actions/${id}`, { method: 'PATCH', body: JSON.stringify({ status: completed ? 'completed' : 'open' }) });
+    const list = await api(`/incidents/${currentIncident}/actions`);
+    renderActions(list);
+}
+async function deleteAction(id) {
+    await api(`/incidents/${currentIncident}/actions/${id}`, { method: 'DELETE' });
+    const list = await api(`/incidents/${currentIncident}/actions`);
+    renderActions(list);
+}
+
+// ── Render: Changes ──
+function renderChanges(list) {
+    const el = document.getElementById('changesList');
+    if (!list || !list.length) { el.innerHTML = '<div class="text-sm text-slate-500">No changes recorded</div>'; return; }
+    el.innerHTML = list.map(c => `
+        <div class="p-2 rounded bg-[#0f172a] flex justify-between">
+            <div>
+                <p class="text-sm">${c.description}</p>
+                <span class="text-xs text-slate-500">${c.owner_team ? c.owner_team + ' · ' : ''}${c.assignee || ''} · ${timeAgo(c.timestamp)}</span>
+            </div>
+            <button class="text-xs text-slate-500 hover:text-red-400" onclick="deleteChange('${c.id}')">✕</button>
+        </div>
+    `).join('');
+}
+async function addChange() {
+    const data = { description: document.getElementById('changeDesc').value, owner_team: document.getElementById('changeTeam').value, assignee: document.getElementById('changeAssignee').value };
+    if (!data.description) return;
+    await api(`/incidents/${currentIncident}/changes`, { method: 'POST', body: JSON.stringify(data) });
+    document.getElementById('changeDesc').value = '';
+    const list = await api(`/incidents/${currentIncident}/changes`);
+    renderChanges(list);
+}
+async function deleteChange(id) {
+    await api(`/incidents/${currentIncident}/changes/${id}`, { method: 'DELETE' });
+    const list = await api(`/incidents/${currentIncident}/changes`);
+    renderChanges(list);
+}
+
+// ── Tabs ──
+function switchTab(name) {
+    document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
+    document.querySelectorAll('.tab-content').forEach(c => c.classList.add('hidden'));
+    document.getElementById('tab-' + name).classList.remove('hidden');
+}
+
+// ── Render: Vendor ──
+function renderVendor(v) {
+    const el = document.getElementById('vendorPanel');
+    if (!v) { el.innerHTML = '<div class="text-sm text-slate-500">No vendor info</div>'; return; }
+    el.innerHTML = `
+        <div class="space-y-2">
+            <div class="font-medium">${v.vendor_name}</div>
+            ${v.account_manager ? `<div class="text-slate-400">Account Manager: ${v.account_manager}</div>` : ''}
+            ${v.support_email ? `<div class="text-slate-400">📧 ${v.support_email}</div>` : ''}
+            ${v.support_phone ? `<div class="text-slate-400">📞 ${v.support_phone}</div>` : ''}
+            ${v.emergency_line ? `<div class="text-red-400">🚨 Emergency: ${v.emergency_line}</div>` : ''}
+            ${v.support_hours ? `
+                <div class="separator"></div>
+                <div class="text-xs space-y-1">
+                    <div class="font-medium text-slate-300">Support Hours</div>
+                    <div class="text-slate-400">Weekday: ${v.support_hours.weekday}</div>
+                    <div class="text-slate-400">Weekend: ${v.support_hours.weekend}</div>
+                    <div class="text-slate-400">Emergency: ${v.support_hours.emergency}</div>
+                </div>
+            ` : ''}
+            ${v.sla_terms && v.sla_terms.length ? `
+                <div class="separator"></div>
+                <div class="text-xs space-y-1">
+                    <div class="font-medium text-slate-300">SLA Terms</div>
+                    ${v.sla_terms.map(s => `<div class="text-slate-400">${s.priority}: Response ${s.response_time} / Resolution ${s.resolution_time}</div>`).join('')}
+                </div>
+            ` : ''}
+            ${v.uptime_guarantee ? `<div class="text-xs text-slate-400">Uptime: ${v.uptime_guarantee}</div>` : ''}
+            ${v.contract_expiry ? `<div class="text-xs text-slate-400">Contract expires: ${v.contract_expiry}</div>` : ''}
+        </div>
+    `;
+}
+
+// ── Render: Priority Tracker ──
+function renderPriority(list) {
+    const el = document.getElementById('priorityTracker');
+    if (!list || !list.length) { el.innerHTML = '<div class="text-sm text-slate-500">No priority changes recorded</div>'; return; }
+    el.innerHTML = `
+        <div class="flex items-center gap-2 flex-wrap">
+            ${list.map((c, i) => `
+                ${i > 0 ? '<span class="text-slate-500">→</span>' : ''}
+                <div class="text-center">
+                    ${priorityBadge(c.to_priority)}
+                    <div class="text-[10px] text-slate-500 mt-0.5">${timeAgo(c.changed_at)}</div>
+                </div>
+            `).join('')}
+        </div>
+    `;
+}
+
+// ── Render: Handover ──
+async function renderHandover() {
+    const el = document.getElementById('handoverPanel');
+    try {
+        const data = await api(`/incidents/${currentIncident}/handover`);
+        el.innerHTML = `
+            <div class="space-y-2">
+                <div class="text-sm">Current Owner: <span class="font-medium text-blue-400">${data.current_owner}</span></div>
+                <button class="btn btn-ghost btn-sm w-full" onclick="document.getElementById('handoverModal').classList.remove('hidden')">Transfer Ownership</button>
+                ${data.history && data.history.length ? `
+                    <div class="separator"></div>
+                    <div class="text-xs text-slate-500">History:</div>
+                    ${data.history.map(h => `<div class="text-xs text-slate-400">${h.from_manager} → ${h.to_manager} · ${timeAgo(h.transferred_at)}</div>`).join('')}
+                ` : ''}
+            </div>
+        `;
+    } catch { el.innerHTML = '<div class="text-sm text-slate-500">Unable to load</div>'; }
+}
+
+async function doHandover() {
+    const target = document.getElementById('handoverTarget').value;
+    if (!target) { alert('Enter target manager name'); return; }
+    const checklist = {
+        status_reviewed: document.getElementById('hc1').checked,
+        actions_transferred: document.getElementById('hc2').checked,
+        stakeholder_comms_shared: document.getElementById('hc3').checked,
+        vendor_status_confirmed: document.getElementById('hc4').checked,
+        escalation_points_identified: document.getElementById('hc5').checked,
+    };
+    try {
+        await api(`/incidents/${currentIncident}/handover`, { method: 'POST', body: JSON.stringify({ target_manager: target, checklist }) });
+        document.getElementById('handoverModal').classList.add('hidden');
+        renderHandover();
+    } catch (e) { alert(e.message); }
+}
+
+// ── Resolution ──
+function renderResolution(r) {
+    const el = document.getElementById('resolutionPanel');
+    if (r) {
+        el.innerHTML = `
+            <div class="space-y-2 text-sm">
+                <div class="badge badge-green">Resolved</div>
+                <p class="text-slate-400">${r.summary || ''}</p>
+                ${r.problem_ticket ? `<div class="text-xs text-slate-500">Problem: ${r.problem_ticket}</div>` : ''}
+                ${r.confluence_url ? `<div class="text-xs"><a href="${r.confluence_url}" class="text-blue-400 hover:underline" target="_blank">View PIR →</a></div>` : ''}
+            </div>
+        `;
+    } else {
+        el.innerHTML = '<button class="btn btn-danger w-full" onclick="showResolveModal()" id="resolveBtn">Resolve Incident</button>';
+    }
+}
+
+function showResolveModal() { document.getElementById('resolveModal').classList.remove('hidden'); }
+
+async function generateSummary() {
+    try {
+        const summary = await api(`/incidents/${currentIncident}/resolution/generate?transcript=meeting`, { method: 'POST' });
+        const el = document.getElementById('aiSummary');
+        el.classList.remove('hidden');
+        el.innerHTML = `
+            <div class="font-medium text-green-400">AI Summary Generated</div>
+            <p>${summary.summary}</p>
+            <div class="separator"></div>
+            <div class="font-medium text-slate-300">Root Cause</div>
+            <p>${summary.root_cause}</p>
+            <div class="separator"></div>
+            <div class="font-medium text-slate-300">Actions Taken</div>
+            ${summary.actions_taken.map(a => `<div>• ${a.time}: ${a.action}</div>`).join('')}
+            <div class="text-xs text-slate-500 mt-1">Problem Ticket: ${summary.problem_ticket}</div>
+        `;
+    } catch (e) { alert('Failed: ' + e.message); }
+}
+
+async function resolveIncident() {
+    try {
+        await api(`/incidents/${currentIncident}/resolve`, {
+            method: 'POST',
+            body: JSON.stringify({ resolution_notes: document.getElementById('resolveNotes').value, close_code: document.getElementById('resolveCode').value }),
+        });
+        // Publish to confluence
+        const pub = await api(`/incidents/${currentIncident}/resolution/publish`, { method: 'POST' });
+        document.getElementById('resolveModal').classList.add('hidden');
+        alert('Incident resolved! Confluence: ' + (pub.confluence_url || 'N/A'));
+        loadDashboard();
+    } catch (e) { alert('Error: ' + e.message); }
+}
+
+// ── Enter key handlers ──
+document.getElementById('noteInput').addEventListener('keydown', e => { if (e.key === 'Enter') addNote(); });
+
+// ── Init ──
+refreshIncidentList();
+</script>
+</body>
+</html>
