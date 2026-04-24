@@ -158,3 +158,119 @@ async def list_incidents(status: str = Query("ongoing", pattern="^(ongoing|resol
 
     results = response.json().get("result", [])
     return [_build_incident(r) for r in results]
+
+
+# ---------------------------------------------------------------------------
+# GET /support-groups — dropdown list of assignment groups
+# ---------------------------------------------------------------------------
+
+@router.get("/support-groups")
+async def list_support_groups():
+    """Return distinct support/assignment groups from ServiceNow.
+
+    Response::
+
+        [{"sys_id": "...", "name": "Network"}, ...]
+    """
+    async with ServiceNowClient() as client:
+        response = await client.get("/api/now/table/sys_user_group", params={
+            "sysparm_query": "active=true^ORDERBYname",
+            "sysparm_fields": "sys_id,name",
+            "sysparm_display_value": "true",
+            "sysparm_limit": "200",
+        })
+    results = response.json().get("result", [])
+    return [{"sys_id": r.get("sys_id", ""), "name": r.get("name", "")} for r in results]
+
+
+# ---------------------------------------------------------------------------
+# GET /oncall?group_id=<sys_id> — who is on call for a support group
+# ---------------------------------------------------------------------------
+
+@router.get("/oncall")
+async def get_oncall(group_id: str = Query(..., description="sys_id of the support group")):
+    """Return on-call users for the given support group.
+
+    Response::
+
+        {
+            "group_name": "Network",
+            "users": [
+                {"name": "...", "email": "...", "phone": "...", "userId": "..."}
+            ]
+        }
+    """
+    async with ServiceNowClient() as client:
+        # Get group name
+        grp_resp = await client.get("/api/now/table/sys_user_group", params={
+            "sysparm_query": f"sys_id={group_id}",
+            "sysparm_fields": "name",
+            "sysparm_limit": "1",
+        })
+        grp_results = grp_resp.json().get("result", [])
+        group_name = grp_results[0].get("name", "Unknown") if grp_results else "Unknown"
+
+        # Fetch on-call rota
+        try:
+            oncall_resp = await client.get(
+                "/api/now/on_call_rota/whoisoncall",
+                params={"group_sys_id": group_id},
+            )
+            oncall_data = oncall_resp.json().get("result", [])
+        except Exception:
+            oncall_data = []
+
+        # If on_call_rota API returned nothing, fall back to group members
+        users = []
+        if isinstance(oncall_data, list) and oncall_data:
+            for u in oncall_data:
+                user_id = u.get("userId") or u.get("user", {}).get("value", "")
+                users.append({
+                    "name": u.get("name") or u.get("user", {}).get("display_value", "Unknown"),
+                    "email": u.get("email", ""),
+                    "phone": u.get("phone", ""),
+                    "userId": user_id,
+                })
+        elif isinstance(oncall_data, dict):
+            raw_users = oncall_data.get("users", [])
+            for u in raw_users:
+                users.append({
+                    "name": u.get("name", "Unknown"),
+                    "email": u.get("email", ""),
+                    "phone": u.get("phone", ""),
+                    "userId": u.get("userId", ""),
+                })
+
+        # Fallback: fetch group members if rota returned nothing
+        if not users:
+            members_resp = await client.get("/api/now/table/sys_user_grmember", params={
+                "sysparm_query": f"group={group_id}",
+                "sysparm_fields": "user",
+                "sysparm_display_value": "all",
+                "sysparm_limit": "20",
+            })
+            members = members_resp.json().get("result", [])
+            user_sys_ids = []
+            for m in members:
+                uid = m.get("user", {})
+                if isinstance(uid, dict):
+                    user_sys_ids.append(uid.get("value", ""))
+                else:
+                    user_sys_ids.append(str(uid))
+
+            if user_sys_ids:
+                ids_str = ",".join(user_sys_ids)
+                users_resp = await client.get("/api/now/table/sys_user", params={
+                    "sysparm_query": f"sys_idIN{ids_str}",
+                    "sysparm_fields": "sys_id,name,email,phone",
+                    "sysparm_limit": "20",
+                })
+                for u in users_resp.json().get("result", []):
+                    users.append({
+                        "name": u.get("name", "Unknown"),
+                        "email": u.get("email", ""),
+                        "phone": u.get("phone", ""),
+                        "userId": u.get("sys_id", ""),
+                    })
+
+    return {"group_name": group_name, "users": users}
