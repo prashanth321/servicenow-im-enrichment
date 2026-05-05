@@ -198,8 +198,11 @@
             <span class="nav-badge">Soon</span>
         </div>
     </nav>
-    <div class="sidebar-footer">
-        <p>ServiceNow IM Enrichment v2.0</p>
+    <div class="sidebar-footer" style="padding: 0.75rem; border-top: 1px solid var(--border);">
+        <a class="nav-item" href="javascript:void(0)" onclick="handleLogout()">
+            <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
+            Logout
+        </a>
     </div>
 </aside>
 
@@ -316,6 +319,21 @@
 </div>
 
 <script>
+// ── Auth Guard ──
+(function checkAuth() {
+    const token = localStorage.getItem('im_auth_token');
+    if (!token) {
+        window.location.href = '/login';
+        return;
+    }
+})();
+
+function handleLogout() {
+    localStorage.removeItem('im_auth_token');
+    localStorage.removeItem('im_user_email');
+    window.location.href = '/login';
+}
+
 const API = '';
 let currentTab = 'ongoing';
 let refreshCountdown = 30;
@@ -401,7 +419,7 @@ async function loadIncidents(status) {
             const timeLabel = status === 'ongoing' ? 'Opened ' + timeStr : 'Resolved ' + timeStr;
 
             return `
-                <div class="incident-row" onclick="window.location.href='/static/dashboard.html#${inc.id}'" title="${inc.title}">
+                <div class="incident-row" onclick="window.location.href='/dashboard?incident=${inc.id}'" title="${inc.title}">
                     <div class="incident-id">${inc.id}</div>
                     <div><span class="priority-badge ${pClass}">${pLabel}</span></div>
                     <div class="incident-title">${escapeHtml(inc.title)}</div>

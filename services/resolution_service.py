@@ -33,7 +33,8 @@ def generate_summary(
     """Generate a resolution summary from a meeting transcript.
 
     In production this would call an LLM API. The current implementation
-    produces a structured summary template similar to the React mock.
+    extracts key information from the transcript and produces a structured
+    summary.
 
     Args:
         incident_number: The incident being resolved.
@@ -47,18 +48,59 @@ def generate_summary(
     description = ctx.get("short_description", "Incident")
     problem_ticket = f"PRB{uuid.uuid4().hex[:7].upper()}"
 
-    summary = ResolutionSummary(
-        summary=(
+    # Extract key lines from transcript for summary
+    lines = [l.strip() for l in transcript.strip().splitlines() if l.strip()]
+    total_lines = len(lines)
+
+    # Build summary from transcript content
+    if total_lines > 0:
+        # Use first few lines as context, last lines as resolution
+        intro = " ".join(lines[:min(3, total_lines)])
+        conclusion = " ".join(lines[max(0, total_lines - 2):])
+        summary_text = (
+            f"Incident {incident_number} — {description}\n\n"
+            f"Meeting Transcript Summary ({total_lines} lines analyzed):\n"
+            f"{intro}\n\n"
+            f"Resolution: {conclusion}\n\n"
+            f"A problem ticket ({problem_ticket}) has been raised for permanent resolution."
+        )
+        root_cause_text = (
+            f"Based on the transcript ({total_lines} lines), the root cause was discussed. "
+            f"Key finding: {lines[min(2, total_lines - 1)] if total_lines > 2 else lines[0]}"
+        )
+        # Extract time-stamped actions if transcript has timestamps
+        actions = []
+        for line in lines:
+            if any(marker in line.lower() for marker in ["t+", "action:", "fix:", "resolved", "identified", "deployed", "rolled back", "escalat"]):
+                actions.append({"time": "Meeting", "action": line[:120]})
+        if not actions:
+            # Create actions from transcript sections
+            chunk_size = max(1, total_lines // 4)
+            for i in range(0, min(total_lines, 4 * chunk_size), chunk_size):
+                actions.append({
+                    "time": f"T+{i * 5} min",
+                    "action": lines[i][:120] if i < total_lines else "Continued discussion",
+                })
+    else:
+        summary_text = (
             f"Incident {incident_number} — {description}\n\n"
             "Root cause was identified and a fix has been applied. "
-            "Services have been restored to normal operation. "
-            "A problem ticket has been raised for permanent resolution."
-        ),
-        root_cause=(
-            "Analysis of the transcript indicates the issue was caused by "
-            "a configuration change that impacted service availability. "
+            "Services have been restored to normal operation."
+        )
+        root_cause_text = (
+            "A configuration change impacted service availability. "
             "The change was rolled back and services recovered."
-        ),
+        )
+        actions = [
+            {"time": "T+0 min", "action": "Incident declared, bridge opened"},
+            {"time": "T+5 min", "action": "Initial triage and impact assessment"},
+            {"time": "T+15 min", "action": "Root cause identified"},
+            {"time": "T+25 min", "action": "Fix applied, services recovering"},
+        ]
+
+    summary = ResolutionSummary(
+        summary=summary_text,
+        root_cause=root_cause_text,
         people_chronology=[
             {"time": "T+0 min", "event": "Incident declared, bridge opened"},
             {"time": "T+5 min", "event": "On-call engineer joined"},
@@ -70,12 +112,7 @@ def generate_summary(
             {"time": "T+5 min", "target": "Secondary on-call", "method": "PagerDuty"},
             {"time": "T+10 min", "target": "Service owner", "method": "Phone"},
         ],
-        actions_taken=[
-            {"time": "T+5 min", "action": "Initial triage and impact assessment"},
-            {"time": "T+15 min", "action": "Root cause identified — configuration rollback initiated"},
-            {"time": "T+25 min", "action": "Rollback completed, services recovering"},
-            {"time": "T+35 min", "action": "Full service restoration confirmed"},
-        ],
+        actions_taken=actions,
         problem_ticket=problem_ticket,
         generated_at=datetime.utcnow(),
     )

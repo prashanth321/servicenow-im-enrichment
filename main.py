@@ -176,7 +176,16 @@ async def _polling_loop() -> None:
                 if response.status_code >= 400:
                     poll_logger.error("Polling query failed — HTTP %s", response.status_code)
                 else:
-                    results: list[dict] = response.json().get("result", [])
+                    try:
+                        results: list[dict] = response.json().get("result", [])
+                    except Exception:
+                        poll_logger.error(
+                            "Polling response is not valid JSON (status %s) — "
+                            "ServiceNow instance may be hibernated or unreachable",
+                            response.status_code,
+                        )
+                        await asyncio.sleep(settings.polling_interval_seconds)
+                        continue
                     poll_logger.info("Polling found %d candidate incident(s)", len(results))
 
                     for record in results:
@@ -246,6 +255,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Register auth routes
+from routes.auth_routes import router as auth_router  # noqa: E402
+app.include_router(auth_router)
+
 # Register the major incidents routes (BEFORE dashboard to avoid path conflicts)
 from routes.incidents_routes import router as incidents_router  # noqa: E402
 app.include_router(incidents_router)
@@ -264,15 +277,27 @@ app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
 # ---------------------------------------------------------------------------
 
 @app.get("/", include_in_schema=False)
-async def serve_dashboard():
-    """Serve the Major Incidents Dashboard at the root URL."""
-    return FileResponse(str(_STATIC_DIR / "major_incidents.html"))
+async def serve_login():
+    """Serve the Login page at the root URL."""
+    return FileResponse(str(_STATIC_DIR / "login.html"))
+
+
+@app.get("/login", include_in_schema=False)
+async def serve_login_page():
+    """Serve the Login page."""
+    return FileResponse(str(_STATIC_DIR / "login.html"))
 
 
 @app.get("/dashboard", include_in_schema=False)
 async def serve_im_dashboard():
     """Serve the IM Dashboard HTML page."""
     return FileResponse(str(_STATIC_DIR / "dashboard.html"))
+
+
+@app.get("/incidents-view", include_in_schema=False)
+async def serve_major_incidents():
+    """Serve the Major Incidents page."""
+    return FileResponse(str(_STATIC_DIR / "major_incidents.html"))
 
 
 @app.get("/incidents/list/active-p2")

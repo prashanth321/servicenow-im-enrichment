@@ -82,7 +82,10 @@
         </select>
         <button class="btn btn-ghost btn-sm" onclick="refreshIncidentList()">↻ Refresh</button>
     </div>
-    <div id="headerInfo" class="ml-auto flex items-center gap-3 text-sm"></div>
+    <div id="headerInfo" class="ml-auto flex items-center gap-3 text-sm">
+        <span id="userEmail" class="text-slate-400"></span>
+        <button class="btn btn-ghost btn-sm" onclick="handleLogout()">⏻ Logout</button>
+    </div>
 </div>
 
 <!-- Incident Header -->
@@ -310,7 +313,34 @@
                 </select>
             </div>
             <button class="btn btn-ghost w-full" onclick="generateSummary()">🤖 Generate AI Summary</button>
-            <div id="aiSummary" class="hidden bg-[#0f172a] p-3 rounded-lg text-sm space-y-2"></div>
+            <div class="mt-2 p-3 rounded-lg bg-[#0f172a] border border-[#334155]">
+                <label class="block text-xs text-slate-400 mb-1">Upload Meeting Transcript</label>
+                <input type="file" id="transcriptFile" accept=".txt,.md,.csv,.log,.vtt,.srt" class="block w-full text-xs text-slate-400 file:mr-3 file:py-1 file:px-3 file:rounded file:border-0 file:text-xs file:font-medium file:bg-[#334155] file:text-slate-300 file:cursor-pointer hover:file:bg-[#475569]">
+                <p class="text-[10px] text-slate-500 mt-1">Or paste transcript below:</p>
+                <textarea id="transcriptText" class="input mt-1" rows="3" placeholder="Paste meeting transcript here..."></textarea>
+            </div>
+            <div id="aiSummary" class="hidden bg-[#0f172a] p-3 rounded-lg text-sm space-y-3">
+                <div class="flex items-center justify-between">
+                    <span class="font-medium text-green-400">AI Summary Generated</span>
+                    <span class="text-xs text-slate-500">You can edit below before resolving</span>
+                </div>
+                <div>
+                    <label class="text-xs text-slate-400">Summary</label>
+                    <textarea id="aiSummaryText" class="input mt-1" rows="3"></textarea>
+                </div>
+                <div>
+                    <label class="text-xs text-slate-400">Root Cause</label>
+                    <textarea id="aiRootCause" class="input mt-1" rows="2"></textarea>
+                </div>
+                <div>
+                    <label class="text-xs text-slate-400">Actions Taken</label>
+                    <textarea id="aiActionsTaken" class="input mt-1" rows="3"></textarea>
+                </div>
+                <div>
+                    <label class="text-xs text-slate-400">Problem Ticket</label>
+                    <input id="aiProblemTicket" class="input mt-1">
+                </div>
+            </div>
             <div class="flex justify-end gap-2">
                 <button class="btn btn-ghost" onclick="document.getElementById('resolveModal').classList.add('hidden')">Cancel</button>
                 <button class="btn btn-danger" onclick="resolveIncident()">Resolve in ServiceNow</button>
@@ -320,6 +350,24 @@
 </div>
 
 <script>
+// ── Auth Guard ──
+(function checkAuth() {
+    const token = localStorage.getItem('im_auth_token');
+    if (!token) {
+        window.location.href = '/login';
+        return;
+    }
+    const email = localStorage.getItem('im_user_email') || '';
+    const emailEl = document.getElementById('userEmail');
+    if (emailEl) emailEl.textContent = email;
+})();
+
+function handleLogout() {
+    localStorage.removeItem('im_auth_token');
+    localStorage.removeItem('im_user_email');
+    window.location.href = '/login';
+}
+
 const API = '';
 let currentIncident = null;
 let dashboardData = null;
@@ -454,7 +502,12 @@ function renderHeader(inc) {
             </div>
         </div>
         <p class="text-sm mt-1">${inc.short_description}</p>
-        ${inc.business_impact ? `<div class="mt-1"><span class="badge ${inc.business_impact === 'High' ? 'badge-red' : inc.business_impact === 'Medium' ? 'badge-amber' : 'badge-green'}">Impact: ${inc.business_impact}</span></div>` : ''}
+        ${inc.description ? `<p class="text-xs text-slate-400 mt-1">${inc.description}</p>` : ''}
+        <div class="flex flex-wrap items-center gap-2 mt-2">
+            ${inc.service_offering ? `<span class="badge badge-blue">Service Offering: ${inc.service_offering}</span>` : ''}
+            ${inc.ci_name ? `<span class="badge badge-blue">CI: ${inc.ci_name}</span>` : ''}
+            ${inc.business_impact ? `<span class="badge ${inc.business_impact === 'High' ? 'badge-red' : inc.business_impact === 'Medium' ? 'badge-amber' : 'badge-green'}">Impact: ${inc.business_impact}</span>` : ''}
+        </div>
     `;
     document.getElementById('headerInfo').innerHTML = `
         <span class="text-slate-400">${inc.assigned_to ? 'Assigned: ' + inc.assigned_to : 'Unassigned'}</span>
@@ -803,28 +856,51 @@ function showResolveModal() { document.getElementById('resolveModal').classList.
 
 async function generateSummary() {
     try {
-        const summary = await api(`/incidents/${currentIncident}/resolution/generate?transcript=meeting`, { method: 'POST' });
+        // Get transcript from file upload or textarea
+        let transcript = '';
+        const fileInput = document.getElementById('transcriptFile');
+        const textInput = document.getElementById('transcriptText');
+
+        if (fileInput.files && fileInput.files.length > 0) {
+            transcript = await fileInput.files[0].text();
+        } else if (textInput.value.trim()) {
+            transcript = textInput.value.trim();
+        }
+
+        if (!transcript) {
+            alert('Please upload a transcript file or paste the transcript text.');
+            return;
+        }
+
+        const summary = await api(`/incidents/${currentIncident}/resolution/generate`, {
+            method: 'POST',
+            body: JSON.stringify({ transcript }),
+        });
         const el = document.getElementById('aiSummary');
         el.classList.remove('hidden');
-        el.innerHTML = `
-            <div class="font-medium text-green-400">AI Summary Generated</div>
-            <p>${summary.summary}</p>
-            <div class="separator"></div>
-            <div class="font-medium text-slate-300">Root Cause</div>
-            <p>${summary.root_cause}</p>
-            <div class="separator"></div>
-            <div class="font-medium text-slate-300">Actions Taken</div>
-            ${summary.actions_taken.map(a => `<div>• ${a.time}: ${a.action}</div>`).join('')}
-            <div class="text-xs text-slate-500 mt-1">Problem Ticket: ${summary.problem_ticket}</div>
-        `;
+        // Populate editable fields
+        document.getElementById('aiSummaryText').value = summary.summary || '';
+        document.getElementById('aiRootCause').value = summary.root_cause || '';
+        document.getElementById('aiActionsTaken').value = (summary.actions_taken || []).map(a => `${a.time}: ${a.action}`).join('\n');
+        document.getElementById('aiProblemTicket').value = summary.problem_ticket || '';
     } catch (e) { alert('Failed: ' + e.message); }
 }
 
 async function resolveIncident() {
     try {
+        // Include AI summary edits in resolution notes if generated
+        let notes = document.getElementById('resolveNotes').value;
+        const aiSummary = document.getElementById('aiSummaryText');
+        if (aiSummary && aiSummary.value.trim()) {
+            const rootCause = document.getElementById('aiRootCause').value.trim();
+            const actions = document.getElementById('aiActionsTaken').value.trim();
+            notes += '\n\n--- AI Summary (Reviewed) ---\n' + aiSummary.value.trim();
+            if (rootCause) notes += '\n\nRoot Cause: ' + rootCause;
+            if (actions) notes += '\n\nActions Taken:\n' + actions;
+        }
         await api(`/incidents/${currentIncident}/resolve`, {
             method: 'POST',
-            body: JSON.stringify({ resolution_notes: document.getElementById('resolveNotes').value, close_code: document.getElementById('resolveCode').value }),
+            body: JSON.stringify({ resolution_notes: notes, close_code: document.getElementById('resolveCode').value }),
         });
         // Publish to confluence
         const pub = await api(`/incidents/${currentIncident}/resolution/publish`, { method: 'POST' });
@@ -838,7 +914,27 @@ async function resolveIncident() {
 document.getElementById('noteInput').addEventListener('keydown', e => { if (e.key === 'Enter') addNote(); });
 
 // ── Init ──
-refreshIncidentList();
+refreshIncidentList().then(() => {
+    // Auto-load incident from URL query parameter (e.g., /dashboard?incident=INC0000049)
+    const params = new URLSearchParams(window.location.search);
+    const incidentFromUrl = params.get('incident');
+    if (incidentFromUrl) {
+        const sel = document.getElementById('incidentSelect');
+        // Set the value if it exists in dropdown, or add it
+        let found = false;
+        for (const opt of sel.options) {
+            if (opt.value === incidentFromUrl) { found = true; break; }
+        }
+        if (!found) {
+            const opt = document.createElement('option');
+            opt.value = incidentFromUrl;
+            opt.text = incidentFromUrl;
+            sel.add(opt);
+        }
+        sel.value = incidentFromUrl;
+        loadDashboard();
+    }
+});
 </script>
 </body>
 </html>

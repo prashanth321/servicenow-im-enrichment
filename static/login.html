@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login — IM Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        :root {
+            --bg-primary: #0f172a;
+            --bg-secondary: #1e293b;
+            --bg-card: #1e293b;
+            --border: #334155;
+            --text-primary: #f1f5f9;
+            --text-secondary: #94a3b8;
+            --accent-blue: #3b82f6;
+            --accent-red: #ef4444;
+        }
+        body { background: var(--bg-primary); color: var(--text-primary); font-family: 'Inter', system-ui, sans-serif; min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+        .login-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 0.75rem; width: 100%; max-width: 400px; padding: 2rem; }
+        .input { background: var(--bg-primary); border: 1px solid var(--border); color: var(--text-primary); padding: 0.625rem 0.75rem; border-radius: 0.5rem; width: 100%; font-size: 0.875rem; outline: none; transition: border-color 0.15s, box-shadow 0.15s; }
+        .input:focus { border-color: var(--accent-blue); box-shadow: 0 0 0 2px rgba(59,130,246,0.2); }
+        .input.error { border-color: var(--accent-red); box-shadow: 0 0 0 2px rgba(239,68,68,0.2); }
+        .btn { padding: 0.625rem 1rem; border-radius: 0.5rem; font-size: 0.875rem; font-weight: 600; cursor: pointer; transition: all 0.15s; border: none; width: 100%; }
+        .btn-primary { background: var(--accent-blue); color: white; }
+        .btn-primary:hover { background: #2563eb; }
+        .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }
+        .error-msg { color: var(--accent-red); font-size: 0.75rem; margin-top: 0.25rem; display: none; }
+        .error-msg.visible { display: block; }
+        .alert { background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3); color: #fca5a5; padding: 0.75rem 1rem; border-radius: 0.5rem; font-size: 0.8rem; margin-bottom: 1rem; display: none; }
+        .alert.visible { display: block; }
+        .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid rgba(255,255,255,0.3); border-top-color: white; border-radius: 50%; animation: spin 0.6s linear infinite; margin-right: 0.5rem; vertical-align: middle; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+    <div class="login-card">
+        <!-- Logo / Header -->
+        <div class="text-center mb-6">
+            <div class="flex items-center justify-center gap-2 mb-2">
+                <svg class="w-8 h-8 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                </svg>
+                <span class="font-bold text-xl">IM Dashboard</span>
+            </div>
+            <p class="text-sm text-slate-400">Sign in to access the Incident Manager</p>
+        </div>
+
+        <!-- Error Alert -->
+        <div id="loginAlert" class="alert"></div>
+
+        <!-- Login Form -->
+        <form id="loginForm" onsubmit="handleLogin(event)" novalidate>
+            <div class="mb-4">
+                <label class="block text-sm text-slate-400 mb-1" for="email">Email</label>
+                <input type="email" id="email" class="input" placeholder="you@example.com" autocomplete="email">
+                <div class="error-msg" id="emailError"></div>
+            </div>
+            <div class="mb-6">
+                <label class="block text-sm text-slate-400 mb-1" for="password">Password</label>
+                <input type="password" id="password" class="input" placeholder="••••••••" autocomplete="current-password">
+                <div class="error-msg" id="passwordError"></div>
+            </div>
+            <button type="submit" class="btn btn-primary" id="loginBtn">
+                Sign In
+            </button>
+        </form>
+    </div>
+
+    <script>
+        // Redirect if already authenticated
+        if (localStorage.getItem('im_auth_token')) {
+            window.location.href = '/incidents-view';
+        }
+
+        function validateEmail(email) {
+            return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+        }
+
+        function showFieldError(fieldId, message) {
+            const input = document.getElementById(fieldId);
+            const errorEl = document.getElementById(fieldId + 'Error');
+            input.classList.add('error');
+            errorEl.textContent = message;
+            errorEl.classList.add('visible');
+        }
+
+        function clearFieldError(fieldId) {
+            const input = document.getElementById(fieldId);
+            const errorEl = document.getElementById(fieldId + 'Error');
+            input.classList.remove('error');
+            errorEl.textContent = '';
+            errorEl.classList.remove('visible');
+        }
+
+        function showAlert(message) {
+            const alert = document.getElementById('loginAlert');
+            alert.textContent = message;
+            alert.classList.add('visible');
+        }
+
+        function hideAlert() {
+            document.getElementById('loginAlert').classList.remove('visible');
+        }
+
+        function setLoading(loading) {
+            const btn = document.getElementById('loginBtn');
+            if (loading) {
+                btn.disabled = true;
+                btn.innerHTML = '<span class="spinner"></span> Signing in...';
+            } else {
+                btn.disabled = false;
+                btn.innerHTML = 'Sign In';
+            }
+        }
+
+        async function handleLogin(event) {
+            event.preventDefault();
+            hideAlert();
+            clearFieldError('email');
+            clearFieldError('password');
+
+            const email = document.getElementById('email').value.trim();
+            const password = document.getElementById('password').value;
+
+            // Validate
+            let valid = true;
+            if (!email) {
+                showFieldError('email', 'Email is required');
+                valid = false;
+            } else if (!validateEmail(email)) {
+                showFieldError('email', 'Please enter a valid email address');
+                valid = false;
+            }
+            if (!password) {
+                showFieldError('password', 'Password is required');
+                valid = false;
+            }
+            if (!valid) return;
+
+            setLoading(true);
+
+            try {
+                const res = await fetch('/api/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password }),
+                });
+
+                const data = await res.json();
+
+                if (!res.ok) {
+                    showAlert(data.detail || 'Invalid email or password');
+                    setLoading(false);
+                    return;
+                }
+
+                // Store token and redirect
+                localStorage.setItem('im_auth_token', data.token);
+                localStorage.setItem('im_user_email', email);
+                window.location.href = '/incidents-view';
+            } catch (err) {
+                showAlert('Unable to connect to server. Please try again.');
+                setLoading(false);
+            }
+        }
+
+        // Clear field errors on input
+        document.getElementById('email').addEventListener('input', () => clearFieldError('email'));
+        document.getElementById('password').addEventListener('input', () => clearFieldError('password'));
+    </script>
+</body>
+</html>

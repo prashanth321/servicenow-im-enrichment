@@ -19,7 +19,7 @@ Each endpoint group corresponds to a React panel component:
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 
 from models.dashboard_schemas import (
     ActionItemCreate,
@@ -407,11 +407,24 @@ def get_resolution(incident_number: str):
 
 
 @router.post("/{incident_number}/resolution/generate")
-def generate_resolution_summary(
+async def generate_resolution_summary(
     incident_number: str,
     transcript: str = "",
+    request: Request = None,
 ):
-    """Generate an AI-style resolution summary from a transcript."""
+    """Generate an AI-style resolution summary from a transcript.
+
+    Accepts transcript either as a query param or in the JSON body
+    as {"transcript": "..."}.
+    """
+    # Prefer body content over query param
+    if request:
+        try:
+            body = await request.json()
+            if body.get("transcript"):
+                transcript = body["transcript"]
+        except Exception:
+            pass
     return resolution_service.generate_summary(incident_number, transcript)
 
 
