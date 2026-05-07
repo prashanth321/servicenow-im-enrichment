@@ -7,7 +7,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, EmailStr
 
-from services.auth_service import generate_token, validate_credentials, verify_token
+from services.auth_service import generate_token, get_user_role, validate_credentials, verify_token
 from utils.logger import get_logger
 
 router = APIRouter(prefix="/api", tags=["auth"])
@@ -22,6 +22,7 @@ class LoginRequest(BaseModel):
 class LoginResponse(BaseModel):
     token: str
     email: str
+    role: str
     message: str
 
 
@@ -36,8 +37,9 @@ async def login(payload: LoginRequest):
         raise HTTPException(status_code=401, detail="Invalid email or password")
 
     token = generate_token(payload.email)
-    logger.info("User %s logged in successfully", payload.email)
-    return LoginResponse(token=token, email=payload.email, message="Login successful")
+    role = get_user_role(payload.email)
+    logger.info("User %s logged in successfully (role=%s)", payload.email, role)
+    return LoginResponse(token=token, email=payload.email, role=role, message="Login successful")
 
 
 @router.post("/logout")
@@ -49,7 +51,7 @@ async def logout():
 @router.get("/verify")
 async def verify(token: str = ""):
     """Verify a token is still valid."""
-    email = verify_token(token)
-    if not email:
+    result = verify_token(token)
+    if not result:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
-    return {"valid": True, "email": email}
+    return {"valid": True, "email": result["email"], "role": result["role"]}

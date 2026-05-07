@@ -71,7 +71,8 @@ async def _get_incident_detail(incident_number: str) -> IncidentDetail:
                 "sysparm_fields": (
                     "sys_id,number,priority,state,short_description,description,"
                     "cmdb_ci,service_offering,assignment_group,assigned_to,"
-                    "opened_at,business_impact"
+                    "opened_at,opened_by,u_major_incident_manager,business_impact,"
+                    "sys_created_on"
                 ),
                 "sysparm_display_value": "all",
                 "sysparm_limit": "1",
@@ -106,6 +107,9 @@ async def _get_incident_detail(incident_number: str) -> IncidentDetail:
             service_offering=_dv(r.get("service_offering")),
             assignment_group=_dv(r.get("assignment_group")),
             assigned_to=_dv(r.get("assigned_to")),
+            opened_at=_dv(r.get("opened_at")) or _dv(r.get("sys_created_on")),
+            opened_by=_dv(r.get("opened_by")),
+            major_incident_manager=_dv(r.get("u_major_incident_manager")),
             business_impact=_dv(r.get("business_impact")),
         )
 
@@ -114,6 +118,62 @@ def _map_state(sn_state: str | None) -> str:
     """Map ServiceNow numeric state to our enum value."""
     mapping = {"1": "new", "2": "in_progress", "3": "on_hold", "6": "resolved", "7": "closed"}
     return mapping.get(sn_state or "", "new")
+
+
+# ---------------------------------------------------------------------------
+# Auto-sync helper — pushes dashboard state to ServiceNow work_notes
+# ---------------------------------------------------------------------------
+
+async def _auto_sync_to_servicenow(incident_number: str) -> None:
+    """Automatically sync dashboard actions/notes/changes to ServiceNow work_notes.
+
+    Called after any mutation (add/update/delete) to action items, notes, or changes.
+    Failures are logged but do not block the response.
+    """
+    from datetime import datetime
+
+    try:
+        incident = await _get_incident_detail(incident_number)
+        actions = notes_service.get_action_items(incident_number)
+        notes = notes_service.get_notes(incident_number)
+        changes = notes_service.get_changes(incident_number)
+
+        lines: list[str] = ["=== IM Dashboard Auto-Sync ==="]
+        lines.append(f"Incident: {incident_number}")
+        lines.append(f"Synced at: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC")
+        lines.append("")
+
+        if actions:
+            lines.append("--- Action Items ---")
+            for a in actions:
+                status = "✓" if a.status.value == "completed" else "○"
+                lines.append(f"  {status} {a.description} | Team: {a.team or 'N/A'} | Assignee: {a.assignee or 'Unassigned'} | Status: {a.status.value}")
+            lines.append("")
+
+        if notes:
+            lines.append("--- Notes ---")
+            for n in notes[:5]:  # Last 5 notes to keep work_notes concise
+                ts = n.created_at.strftime('%H:%M') if n.created_at else ''
+                lines.append(f"  [{ts}] {n.author or 'Unknown'}: {n.content}")
+            lines.append("")
+
+        if changes:
+            lines.append("--- Infrastructure Changes ---")
+            for c in changes:
+                lines.append(f"  • {c.description} | Owner: {c.owner_team or 'N/A'} | Assignee: {c.assignee or 'N/A'}")
+            lines.append("")
+
+        lines.append("=== End Auto-Sync ===")
+        work_notes = "\n".join(lines)
+
+        async with ServiceNowClient() as client:
+            await client.patch(
+                f"/api/now/table/incident/{incident.sys_id}",
+                json_body={"work_notes": work_notes},
+            )
+        logger.info("Auto-synced dashboard to incident %s", incident_number)
+    except Exception:
+        logger.warning("Auto-sync failed for %s (non-blocking)", incident_number, exc_info=True)
 
 
 # ---------------------------------------------------------------------------
@@ -223,21 +283,77 @@ async def get_comm_template(incident_number: str, comm_type: CommunicationType):
 
 @router.get("/{incident_number}/notes")
 def list_notes(incident_number: str):
-    """Get all notes for an incident."""
+    """Get all notes for an incident (local + ServiceNow work_notes)."""
     return notes_service.get_notes(incident_number)
 
 
+@router.get("/{incident_number}/notes/servicenow")
+async def get_servicenow_notes(incident_number: str):
+    """Fetch work_notes and comments from the ServiceNow incident journal."""
+    try:
+        incident = await _get_incident_detail(incident_number)
+        sn_notes = []
+        async with ServiceNowClient() as client:
+            # Fetch work_notes (internal journal entries)
+            resp = await client.get(
+                "/api/now/table/sys_journal_field",
+                params={
+                    "sysparm_query": f"element_id={incident.sys_id}^element=work_notes^ORDERBYDESCsys_created_on",
+                    "sysparm_fields": "value,sys_created_on,sys_created_by",
+                    "sysparm_limit": "50",
+                },
+            )
+            work_notes = resp.json().get("result", [])
+            for entry in work_notes:
+                sn_notes.append({
+                    "id": f"sn_wn_{entry.get('sys_created_on', '')}",
+                    "content": entry.get("value", ""),
+                    "author": entry.get("sys_created_by", "System"),
+                    "created_at": entry.get("sys_created_on", ""),
+                    "source": "work_notes",
+                })
+
+            # Fetch comments (customer-visible)
+            resp2 = await client.get(
+                "/api/now/table/sys_journal_field",
+                params={
+                    "sysparm_query": f"element_id={incident.sys_id}^element=comments^ORDERBYDESCsys_created_on",
+                    "sysparm_fields": "value,sys_created_on,sys_created_by",
+                    "sysparm_limit": "50",
+                },
+            )
+            comments = resp2.json().get("result", [])
+            for entry in comments:
+                sn_notes.append({
+                    "id": f"sn_cm_{entry.get('sys_created_on', '')}",
+                    "content": entry.get("value", ""),
+                    "author": entry.get("sys_created_by", "System"),
+                    "created_at": entry.get("sys_created_on", ""),
+                    "source": "comments",
+                })
+
+        # Sort combined by created_at descending
+        sn_notes.sort(key=lambda x: x["created_at"], reverse=True)
+        return sn_notes
+    except Exception as e:
+        logger.warning("Failed to fetch SN notes for %s: %s", incident_number, e)
+        return []
+
+
 @router.post("/{incident_number}/notes", status_code=201)
-def add_note(incident_number: str, payload: NoteCreate):
-    """Add a note."""
-    return notes_service.add_note(incident_number, payload)
+async def add_note(incident_number: str, payload: NoteCreate):
+    """Add a note and sync to ServiceNow."""
+    note = notes_service.add_note(incident_number, payload)
+    await _auto_sync_to_servicenow(incident_number)
+    return note
 
 
 @router.delete("/{incident_number}/notes/{note_id}", status_code=204)
-def delete_note(incident_number: str, note_id: str):
-    """Delete a note."""
+async def delete_note(incident_number: str, note_id: str):
+    """Delete a note and sync to ServiceNow."""
     if not notes_service.delete_note(incident_number, note_id):
         raise HTTPException(status_code=404, detail="Note not found")
+    await _auto_sync_to_servicenow(incident_number)
 
 
 # ---------------------------------------------------------------------------
@@ -251,25 +367,29 @@ def list_action_items(incident_number: str):
 
 
 @router.post("/{incident_number}/actions", status_code=201)
-def add_action_item(incident_number: str, payload: ActionItemCreate):
-    """Create an action item."""
-    return notes_service.add_action_item(incident_number, payload)
+async def add_action_item(incident_number: str, payload: ActionItemCreate):
+    """Create an action item and sync to ServiceNow."""
+    item = notes_service.add_action_item(incident_number, payload)
+    await _auto_sync_to_servicenow(incident_number)
+    return item
 
 
 @router.patch("/{incident_number}/actions/{item_id}")
-def update_action_item(incident_number: str, item_id: str, payload: ActionItemUpdate):
-    """Update an action item (status, assignee, due date)."""
+async def update_action_item(incident_number: str, item_id: str, payload: ActionItemUpdate):
+    """Update an action item (status, assignee, due date) and sync to ServiceNow."""
     item = notes_service.update_action_item(incident_number, item_id, payload)
     if not item:
         raise HTTPException(status_code=404, detail="Action item not found")
+    await _auto_sync_to_servicenow(incident_number)
     return item
 
 
 @router.delete("/{incident_number}/actions/{item_id}", status_code=204)
-def delete_action_item(incident_number: str, item_id: str):
-    """Delete an action item."""
+async def delete_action_item(incident_number: str, item_id: str):
+    """Delete an action item and sync to ServiceNow."""
     if not notes_service.delete_action_item(incident_number, item_id):
         raise HTTPException(status_code=404, detail="Action item not found")
+    await _auto_sync_to_servicenow(incident_number)
 
 
 # ---------------------------------------------------------------------------
@@ -283,16 +403,19 @@ def list_changes(incident_number: str):
 
 
 @router.post("/{incident_number}/changes", status_code=201)
-def add_change(incident_number: str, payload: InfraChangeCreate):
-    """Record an infrastructure change."""
-    return notes_service.add_change(incident_number, payload)
+async def add_change(incident_number: str, payload: InfraChangeCreate):
+    """Record an infrastructure change and sync to ServiceNow."""
+    change = notes_service.add_change(incident_number, payload)
+    await _auto_sync_to_servicenow(incident_number)
+    return change
 
 
 @router.delete("/{incident_number}/changes/{change_id}", status_code=204)
-def delete_change(incident_number: str, change_id: str):
-    """Delete an infrastructure change record."""
+async def delete_change(incident_number: str, change_id: str):
+    """Delete an infrastructure change record and sync to ServiceNow."""
     if not notes_service.delete_change(incident_number, change_id):
         raise HTTPException(status_code=404, detail="Change not found")
+    await _auto_sync_to_servicenow(incident_number)
 
 
 # ---------------------------------------------------------------------------
@@ -451,6 +574,75 @@ async def resolve_incident(incident_number: str, payload: ResolutionRequest):
     if not success:
         raise HTTPException(status_code=500, detail="Failed to resolve in ServiceNow")
     return {"status": "resolved", "incident": incident_number}
+
+
+# ---------------------------------------------------------------------------
+# Sync dashboard actions to ServiceNow work_notes
+# ---------------------------------------------------------------------------
+
+@router.post("/{incident_number}/sync")
+async def sync_actions_to_servicenow(incident_number: str):
+    """Push all dashboard actions, notes, and changes to the incident work_notes.
+
+    Builds a formatted work_notes entry from the current dashboard state
+    and PATCHes it onto the ServiceNow incident record.
+    """
+    incident = await _get_incident_detail(incident_number)
+
+    # Gather dashboard data
+    actions = notes_service.get_action_items(incident_number)
+    notes = notes_service.get_notes(incident_number)
+    changes = notes_service.get_changes(incident_number)
+
+    # Build work_notes content
+    lines: list[str] = ["=== IM Dashboard Sync ==="]
+    lines.append(f"Incident: {incident_number}")
+    lines.append(f"Synced at: {__import__('datetime').datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC")
+    lines.append("")
+
+    if actions:
+        lines.append("--- Action Items ---")
+        for a in actions:
+            status = "✓" if a.status.value == "completed" else "○"
+            lines.append(f"  {status} {a.description} | Team: {a.team or 'N/A'} | Assignee: {a.assignee or 'Unassigned'} | Status: {a.status.value}")
+        lines.append("")
+
+    if notes:
+        lines.append("--- Notes ---")
+        for n in notes:
+            ts = n.created_at.strftime('%H:%M') if n.created_at else ''
+            lines.append(f"  [{ts}] {n.author or 'Unknown'}: {n.content}")
+        lines.append("")
+
+    if changes:
+        lines.append("--- Infrastructure Changes ---")
+        for c in changes:
+            lines.append(f"  • {c.description} | Owner: {c.owner_team or 'N/A'} | Assignee: {c.assignee or 'N/A'}")
+        lines.append("")
+
+    lines.append("=== End Dashboard Sync ===")
+    work_notes = "\n".join(lines)
+
+    # PATCH the incident
+    async with ServiceNowClient() as client:
+        response = await client.patch(
+            f"/api/now/table/incident/{incident.sys_id}",
+            json_body={"work_notes": work_notes},
+        )
+        if response.status_code >= 400:
+            raise HTTPException(
+                status_code=502,
+                detail=f"Failed to sync to ServiceNow — HTTP {response.status_code}",
+            )
+
+    logger.info("Dashboard actions synced to incident %s", incident_number)
+    return {
+        "status": "synced",
+        "incident": incident_number,
+        "actions_count": len(actions),
+        "notes_count": len(notes),
+        "changes_count": len(changes),
+    }
 
 
 # ---------------------------------------------------------------------------

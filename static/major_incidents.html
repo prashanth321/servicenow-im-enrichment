@@ -8,31 +8,31 @@
     <style>
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
         :root {
-            --bg: #0a0e1a;
-            --bg-sidebar: #0f1425;
-            --bg-card: #141929;
-            --bg-card-hover: #1a2035;
-            --bg-input: #1a2035;
-            --border: #1e2640;
-            --border-light: #2a3456;
-            --text: #e2e8f0;
-            --text-secondary: #8892b0;
-            --text-muted: #5a6580;
+            --bg: #f8fafc;
+            --bg-sidebar: #ffffff;
+            --bg-card: #ffffff;
+            --bg-card-hover: #f1f5f9;
+            --bg-input: #f1f5f9;
+            --border: #e2e8f0;
+            --border-light: #cbd5e1;
+            --text: #0f172a;
+            --text-secondary: #475569;
+            --text-muted: #94a3b8;
             --red: #ef4444;
-            --red-bg: rgba(239,68,68,0.1);
-            --red-border: rgba(239,68,68,0.25);
+            --red-bg: rgba(239,68,68,0.08);
+            --red-border: rgba(239,68,68,0.2);
             --orange: #f97316;
-            --orange-bg: rgba(249,115,22,0.1);
-            --orange-border: rgba(249,115,22,0.25);
+            --orange-bg: rgba(249,115,22,0.08);
+            --orange-border: rgba(249,115,22,0.2);
             --green: #22c55e;
-            --green-bg: rgba(34,197,94,0.1);
-            --green-border: rgba(34,197,94,0.25);
+            --green-bg: rgba(34,197,94,0.08);
+            --green-border: rgba(34,197,94,0.2);
             --blue: #3b82f6;
-            --blue-bg: rgba(59,130,246,0.1);
-            --blue-border: rgba(59,130,246,0.25);
+            --blue-bg: rgba(59,130,246,0.08);
+            --blue-border: rgba(59,130,246,0.2);
             --purple: #a855f7;
-            --neutral-bg: rgba(100,116,139,0.1);
-            --neutral-border: rgba(100,116,139,0.25);
+            --neutral-bg: rgba(100,116,139,0.08);
+            --neutral-border: rgba(100,116,139,0.2);
         }
         body { font-family: 'Inter', system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; display: flex; }
 
@@ -320,17 +320,20 @@
 
 <script>
 // ── Auth Guard ──
+let userRole = 'readonly';
 (function checkAuth() {
     const token = localStorage.getItem('im_auth_token');
     if (!token) {
         window.location.href = '/login';
         return;
     }
+    userRole = localStorage.getItem('im_user_role') || 'readonly';
 })();
 
 function handleLogout() {
     localStorage.removeItem('im_auth_token');
     localStorage.removeItem('im_user_email');
+    localStorage.removeItem('im_user_role');
     window.location.href = '/login';
 }
 
@@ -419,7 +422,7 @@ async function loadIncidents(status) {
             const timeLabel = status === 'ongoing' ? 'Opened ' + timeStr : 'Resolved ' + timeStr;
 
             return `
-                <div class="incident-row" onclick="window.location.href='/dashboard?incident=${inc.id}'" title="${inc.title}">
+                <div class="incident-row" onclick="handleIncidentClick('${inc.id}', '${escapeHtml(inc.title)}')" title="${inc.title}">
                     <div class="incident-id">${inc.id}</div>
                     <div><span class="priority-badge ${pClass}">${pLabel}</span></div>
                     <div class="incident-title">${escapeHtml(inc.title)}</div>
@@ -595,6 +598,228 @@ async function loadOncall(groupId) {
 loadSummary();
 loadIncidents('ongoing');
 startAutoRefresh();
+</script>
+
+<!-- Incident Detail Popup (readonly users) -->
+<div id="incidentNotesModal" class="modal-overlay hidden" onclick="if(event.target===this)closeNotesModal()">
+    <div class="modal-panel">
+        <div class="modal-header">
+            <div>
+                <h3 id="modalIncidentId" class="modal-title"></h3>
+                <p id="modalIncidentTitle" class="modal-subtitle"></p>
+            </div>
+            <button onclick="closeNotesModal()" class="modal-close">✕</button>
+        </div>
+        <div id="modalNotesContent">
+            <div style="text-align:center;padding:40px;color:#64748b">Loading incident details...</div>
+        </div>
+    </div>
+</div>
+
+<style>
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.3);display:flex;align-items:center;justify-content:center;z-index:9999}
+.modal-overlay.hidden{display:none}
+.modal-panel{background:#ffffff;border-radius:12px;padding:0;max-width:780px;width:94%;max-height:85vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.15);border:1px solid #e2e8f0}
+.modal-header{position:sticky;top:0;background:#ffffff;padding:20px 24px 16px;border-bottom:1px solid #e2e8f0;display:flex;justify-content:space-between;align-items:flex-start;z-index:1}
+.modal-title{font-size:1.1rem;font-weight:600;color:#0f172a;margin:0}
+.modal-subtitle{font-size:0.82rem;color:#475569;margin-top:2px}
+.modal-close{background:none;border:none;color:#64748b;font-size:1.4rem;cursor:pointer;padding:4px 8px;line-height:1}
+.modal-body{padding:0 24px 24px}
+
+/* Sections */
+.popup-section{margin-top:20px}
+.popup-section-header{font-size:0.8rem;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;padding:8px 12px;border-radius:6px;margin-bottom:10px;display:flex;align-items:center;gap:8px}
+.popup-section-header .sec-count{font-size:0.7rem;background:rgba(0,0,0,0.08);padding:1px 7px;border-radius:10px}
+
+/* Section colors */
+.sec-impact{background:#fef2f2;color:#991b1b;border:1px solid #fecaca}
+.sec-details{background:#eff6ff;color:#1e40af;border:1px solid #bfdbfe}
+.sec-desc{background:#f8fafc;color:#475569;border:1px solid #e2e8f0}
+.sec-im-notes{background:#ecfeff;color:#155e75;border:1px solid #a5f3fc}
+.sec-pager{background:#fffbeb;color:#92400e;border:1px solid #fde68a}
+.sec-reassign{background:#faf5ff;color:#6b21a8;border:1px solid #e9d5ff}
+.sec-other{background:#f8fafc;color:#475569;border:1px solid #e2e8f0}
+
+/* Detail grid */
+.detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px 16px}
+.detail-item{background:#f1f5f9;border-radius:6px;padding:10px 12px}
+.detail-label{font-size:0.7rem;text-transform:uppercase;letter-spacing:0.04em;color:#64748b;margin-bottom:2px;font-weight:500}
+.detail-value{font-size:0.85rem;color:#0f172a}
+
+/* Impact banner */
+.impact-banner{background:#fef2f2;border-left:3px solid #ef4444;border-radius:6px;padding:12px 16px;font-size:0.85rem;color:#991b1b;line-height:1.5}
+
+/* Description box */
+.desc-box{background:#f8fafc;border-radius:6px;padding:12px 16px;font-size:0.85rem;color:#334155;line-height:1.6;white-space:pre-wrap;border:1px solid #e2e8f0}
+
+/* Note card */
+.sn-note-card{background:#f8fafc;border-radius:6px;padding:10px 12px;margin-bottom:8px;border-left:3px solid #3b82f6;border:1px solid #e2e8f0;border-left:3px solid #3b82f6}
+.sn-note-card.pager{border-left-color:#f59e0b}
+.sn-note-card.reassign{border-left-color:#a855f7}
+.sn-note-card.comment{border-left-color:#22c55e}
+.sn-note-card.im-note{border-left-color:#06b6d4}
+.sn-note-meta{font-size:0.72rem;color:#64748b;margin-bottom:4px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.sn-note-content{font-size:0.82rem;color:#334155;line-height:1.5}
+.sn-badge{font-size:0.68rem;font-weight:500;padding:2px 6px;border-radius:4px}
+.sn-badge.pg{background:#fffbeb;color:#92400e;border:1px solid #fde68a}
+.sn-badge.ra{background:#faf5ff;color:#6b21a8;border:1px solid #e9d5ff}
+.sn-badge.wn{background:#eff6ff;color:#1e40af;border:1px solid #bfdbfe}
+.sn-badge.cm{background:#f0fdf4;color:#166534;border:1px solid #bbf7d0}
+.sn-badge.im{background:#ecfeff;color:#155e75;border:1px solid #a5f3fc}
+</style>
+
+<script>
+// ── Incident Click Handler ──
+function handleIncidentClick(incidentId, title) {
+    if (userRole === 'readonly') {
+        showIncidentNotesPopup(incidentId, title);
+    } else {
+        window.location.href = '/dashboard?incident=' + incidentId;
+    }
+}
+
+async function showIncidentNotesPopup(incidentId, title) {
+    const modal = document.getElementById('incidentNotesModal');
+    document.getElementById('modalIncidentId').textContent = incidentId;
+    document.getElementById('modalIncidentTitle').textContent = title;
+    document.getElementById('modalNotesContent').innerHTML = '<div style="text-align:center;padding:40px;color:#64748b"><div class="spinner"></div><p style="margin-top:8px">Loading incident details...</p></div>';
+    modal.classList.remove('hidden');
+
+    try {
+        // Fetch incident details, SN notes, and dashboard notes in parallel
+        const [incRes, snNotesRes, dashNotes] = await Promise.all([
+            fetch(`/incidents/${incidentId}`),
+            fetch(`/incidents/${incidentId}/notes/servicenow`),
+            fetch(`/incidents/${incidentId}/notes`),
+        ]);
+
+        const inc = incRes.ok ? await incRes.json() : null;
+        const snNotes = snNotesRes.ok ? await snNotesRes.json() : [];
+        const imNotes = dashNotes.ok ? await dashNotes.json() : [];
+
+        const contentEl = document.getElementById('modalNotesContent');
+        let html = '<div class="modal-body">';
+
+        // ── 1. Business Impact (banner) ──
+        const impact = inc?.business_impact || '';
+        html += `
+            <div class="popup-section">
+                <div class="popup-section-header sec-impact">🔴 Business Impact</div>
+                <div class="impact-banner">${impact ? escapeHtml(impact) : '<span style="color:#94a3b8">No business impact recorded</span>'}</div>
+            </div>`;
+
+        // ── 2. Incident Details grid ──
+        const created = inc?.opened_at ? new Date(inc.opened_at.replace(' ','T') + (inc.opened_at.includes('Z')?'':'Z')).toLocaleString() : 'N/A';
+        html += `
+            <div class="popup-section">
+                <div class="popup-section-header sec-details">📋 Incident Details</div>
+                <div class="detail-grid">
+                    <div class="detail-item"><div class="detail-label">Created</div><div class="detail-value">${created}</div></div>
+                    <div class="detail-item"><div class="detail-label">Assignment Group</div><div class="detail-value">${escapeHtml(inc?.assignment_group || 'N/A')}</div></div>
+                    <div class="detail-item"><div class="detail-label">Opened By</div><div class="detail-value">${escapeHtml(inc?.opened_by || 'N/A')}</div></div>
+                    <div class="detail-item"><div class="detail-label">Assigned To</div><div class="detail-value">${escapeHtml(inc?.assigned_to || 'Unassigned')}</div></div>
+                    <div class="detail-item"><div class="detail-label">Major Incident Manager</div><div class="detail-value">${escapeHtml(inc?.major_incident_manager || 'N/A')}</div></div>
+                    <div class="detail-item"><div class="detail-label">Service Offering</div><div class="detail-value">${escapeHtml(inc?.service_offering || 'N/A')}</div></div>
+                    <div class="detail-item"><div class="detail-label">Configuration Item</div><div class="detail-value">${escapeHtml(inc?.ci_name || 'N/A')}</div></div>
+                    <div class="detail-item"><div class="detail-label">Priority</div><div class="detail-value">P${inc?.priority || '?'}</div></div>
+                </div>
+            </div>`;
+
+        // ── 3. Description & Business Impact (full text) ──
+        html += `
+            <div class="popup-section">
+                <div class="popup-section-header sec-desc">📝 Description</div>
+                <div class="desc-box">${inc?.short_description ? escapeHtml(inc.short_description) : ''}${inc?.description ? '\n\n' + escapeHtml(inc.description) : ''}</div>
+            </div>`;
+
+        // ── 4. Incident Manager Notes (from dashboard) ──
+        html += `
+            <div class="popup-section">
+                <div class="popup-section-header sec-im-notes">📒 Incident Manager Notes <span class="sec-count">${imNotes.length}</span></div>`;
+        if (imNotes.length) {
+            html += imNotes.map(n => {
+                const ts = n.created_at ? new Date(n.created_at).toLocaleString() : '';
+                return `<div class="sn-note-card im-note">
+                    <div class="sn-note-meta"><span class="sn-badge im">📒 IM Note</span><span>${escapeHtml(n.author || '')}</span><span>· ${ts}</span></div>
+                    <div class="sn-note-content">${escapeHtml(n.content || '')}</div>
+                </div>`;
+            }).join('');
+        } else {
+            html += '<div style="padding:12px;color:#64748b;font-size:0.82rem">No incident manager notes</div>';
+        }
+        html += '</div>';
+
+        // ── Classify SN notes ──
+        const pagerNotes = [], reassignNotes = [], otherNotes = [];
+        const pagerRx = /pager|page[ds]?\b|alert|notif|sms|on.?call|escalat|duty|respond/i;
+        const reassignRx = /reassign|assign|transfer|handover|hand.?off|routed|routing|group changed|moved to|escalated to|assigned to/i;
+
+        snNotes.forEach(n => {
+            const text = (n.content || '').replace(/<[^>]*>/g, '').trim();
+            if (pagerRx.test(text)) pagerNotes.push(n);
+            else if (reassignRx.test(text)) reassignNotes.push(n);
+            else otherNotes.push(n);
+        });
+
+        // ── 5. Teams Paged (chronological) ──
+        html += `
+            <div class="popup-section">
+                <div class="popup-section-header sec-pager">📟 Teams Paged (Chronological) <span class="sec-count">${pagerNotes.length}</span></div>`;
+        if (pagerNotes.length) {
+            // Show chronological (oldest first)
+            const sorted = [...pagerNotes].sort((a,b) => (a.created_at||'').localeCompare(b.created_at||''));
+            html += sorted.map(n => _renderNote(n, 'pager')).join('');
+        } else {
+            html += '<div style="padding:12px;color:#64748b;font-size:0.82rem">No pager entries found</div>';
+        }
+        html += '</div>';
+
+        // ── 6. Reassignment History ──
+        html += `
+            <div class="popup-section">
+                <div class="popup-section-header sec-reassign">🔄 Reassignment History <span class="sec-count">${reassignNotes.length}</span></div>`;
+        if (reassignNotes.length) {
+            const sorted = [...reassignNotes].sort((a,b) => (a.created_at||'').localeCompare(b.created_at||''));
+            html += sorted.map(n => _renderNote(n, 'reassign')).join('');
+        } else {
+            html += '<div style="padding:12px;color:#64748b;font-size:0.82rem">No reassignment entries found</div>';
+        }
+        html += '</div>';
+
+        // ── 7. Other Work Notes ──
+        html += `
+            <div class="popup-section">
+                <div class="popup-section-header sec-other">🔧 Other Work Notes <span class="sec-count">${otherNotes.length}</span></div>`;
+        if (otherNotes.length) {
+            html += otherNotes.map(n => _renderNote(n, n.source === 'comments' ? 'comment' : '')).join('');
+        } else {
+            html += '<div style="padding:12px;color:#64748b;font-size:0.82rem">No other work notes</div>';
+        }
+        html += '</div>';
+
+        html += '</div>'; // close .modal-body
+        contentEl.innerHTML = html;
+    } catch (e) {
+        document.getElementById('modalNotesContent').innerHTML = `<div style="text-align:center;padding:40px;color:#ef4444"><p>Failed to load details: ${e.message}</p></div>`;
+    }
+}
+
+function _renderNote(n, category) {
+    const content = (n.content || '').replace(/<[^>]*>/g, '').trim();
+    const dateStr = n.created_at ? new Date(n.created_at.replace(' ','T') + (n.created_at.includes('Z')?'':'Z')).toLocaleString() : '';
+    let badgeClass = 'wn', badgeLabel = '🔧 Work Note';
+    if (category === 'pager') { badgeClass = 'pg'; badgeLabel = '📟 Pager'; }
+    else if (category === 'reassign') { badgeClass = 'ra'; badgeLabel = '🔄 Reassignment'; }
+    else if (category === 'comment') { badgeClass = 'cm'; badgeLabel = '💬 Comment'; }
+    return `<div class="sn-note-card ${category}">
+        <div class="sn-note-meta"><span class="sn-badge ${badgeClass}">${badgeLabel}</span><span>${escapeHtml(n.author || '')}</span><span>· ${dateStr}</span></div>
+        <div class="sn-note-content">${escapeHtml(content.substring(0, 600))}${content.length > 600 ? '...' : ''}</div>
+    </div>`;
+}
+
+function closeNotesModal() {
+    document.getElementById('incidentNotesModal').classList.add('hidden');
+}
 </script>
 </body>
 </html>

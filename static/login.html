@@ -7,12 +7,12 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         :root {
-            --bg-primary: #0f172a;
-            --bg-secondary: #1e293b;
-            --bg-card: #1e293b;
-            --border: #334155;
-            --text-primary: #f1f5f9;
-            --text-secondary: #94a3b8;
+            --bg-primary: #f8fafc;
+            --bg-secondary: #ffffff;
+            --bg-card: #ffffff;
+            --border: #e2e8f0;
+            --text-primary: #0f172a;
+            --text-secondary: #475569;
             --accent-blue: #3b82f6;
             --accent-red: #ef4444;
         }
@@ -27,7 +27,7 @@
         .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }
         .error-msg { color: var(--accent-red); font-size: 0.75rem; margin-top: 0.25rem; display: none; }
         .error-msg.visible { display: block; }
-        .alert { background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3); color: #fca5a5; padding: 0.75rem 1rem; border-radius: 0.5rem; font-size: 0.8rem; margin-bottom: 1rem; display: none; }
+        .alert { background: rgba(239,68,68,0.08); border: 1px solid rgba(239,68,68,0.3); color: #dc2626; padding: 0.75rem 1rem; border-radius: 0.5rem; font-size: 0.8rem; margin-bottom: 1rem; display: none; }
         .alert.visible { display: block; }
         .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid rgba(255,255,255,0.3); border-top-color: white; border-radius: 50%; animation: spin 0.6s linear infinite; margin-right: 0.5rem; vertical-align: middle; }
         @keyframes spin { to { transform: rotate(360deg); } }
@@ -43,7 +43,7 @@
                 </svg>
                 <span class="font-bold text-xl">IM Dashboard</span>
             </div>
-            <p class="text-sm text-slate-400">Sign in to access the Incident Manager</p>
+            <p class="text-sm text-slate-500">Sign in to access the Incident Manager</p>
         </div>
 
         <!-- Error Alert -->
@@ -158,6 +158,7 @@
                 // Store token and redirect
                 localStorage.setItem('im_auth_token', data.token);
                 localStorage.setItem('im_user_email', email);
+                localStorage.setItem('im_user_role', data.role || 'readonly');
                 window.location.href = '/incidents-view';
             } catch (err) {
                 showAlert('Unable to connect to server. Please try again.');

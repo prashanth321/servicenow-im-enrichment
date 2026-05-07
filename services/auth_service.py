@@ -22,11 +22,21 @@ _SECRET = hashlib.sha256(settings.sn_password.encode()).hexdigest()
 # Token validity: 8 hours
 _TOKEN_EXPIRY_SECONDS = 8 * 3600
 
-# Mock user credentials (email -> password hash)
+# Mock user credentials (email -> {password_hash, role})
 # In production, validate against ServiceNow or an identity provider.
-_MOCK_USERS: dict[str, str] = {
-    "admin@servicenow.com": hashlib.sha256("admin123".encode()).hexdigest(),
-    "im@servicenow.com": hashlib.sha256("incident2026".encode()).hexdigest(),
+_MOCK_USERS: dict[str, dict[str, str]] = {
+    "admin@servicenow.com": {
+        "password": hashlib.sha256("admin123".encode()).hexdigest(),
+        "role": "admin",
+    },
+    "im@servicenow.com": {
+        "password": hashlib.sha256("incident2026".encode()).hexdigest(),
+        "role": "admin",
+    },
+    "readonly@servicenow.com": {
+        "password": hashlib.sha256("readonly123".encode()).hexdigest(),
+        "role": "readonly",
+    },
 }
 
 
@@ -36,16 +46,24 @@ def _hash_password(password: str) -> str:
 
 def validate_credentials(email: str, password: str) -> bool:
     """Check if email/password pair matches a known user."""
-    stored_hash = _MOCK_USERS.get(email.lower())
-    if not stored_hash:
+    user = _MOCK_USERS.get(email.lower())
+    if not user:
         return False
-    return hmac.compare_digest(stored_hash, _hash_password(password))
+    return hmac.compare_digest(user["password"], _hash_password(password))
+
+
+def get_user_role(email: str) -> str:
+    """Return the role for the given user email."""
+    user = _MOCK_USERS.get(email.lower())
+    return user["role"] if user else "readonly"
 
 
 def generate_token(email: str) -> str:
-    """Generate a signed token containing user email and expiry."""
+    """Generate a signed token containing user email, role, and expiry."""
+    role = get_user_role(email)
     payload = json.dumps({
         "email": email.lower(),
+        "role": role,
         "exp": int(time.time()) + _TOKEN_EXPIRY_SECONDS,
     })
     signature = hmac.HMAC(_SECRET.encode(), payload.encode(), hashlib.sha256).hexdigest()
@@ -55,8 +73,8 @@ def generate_token(email: str) -> str:
     return f"{encoded}.{signature}"
 
 
-def verify_token(token: str) -> Optional[str]:
-    """Verify token and return user email if valid, None otherwise."""
+def verify_token(token: str) -> Optional[dict]:
+    """Verify token and return {email, role} dict if valid, None otherwise."""
     import base64
     try:
         parts = token.split(".", 1)
@@ -70,6 +88,6 @@ def verify_token(token: str) -> Optional[str]:
         data = json.loads(payload)
         if data.get("exp", 0) < time.time():
             return None
-        return data.get("email")
+        return {"email": data.get("email"), "role": data.get("role", "readonly")}
     except Exception:
         return None

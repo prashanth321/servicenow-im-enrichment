@@ -73,6 +73,8 @@ class IncidentDetail(BaseModel):
     assignment_group: str | None = None
     assigned_to: str | None = None
     opened_at: datetime | None = None
+    opened_by: str | None = None
+    major_incident_manager: str | None = None
     business_impact: str | None = None
     duration_minutes: int | None = None
 
