@@ -10,9 +10,13 @@ Converted from CommunicationPanel.tsx / CommunicationModal.
 
 from __future__ import annotations
 
+import smtplib
 import uuid
 from datetime import datetime
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 
+from config.settings import settings
 from models.dashboard_schemas import Communication, CommunicationCreate, CommunicationType
 from utils.logger import get_logger
 
@@ -101,7 +105,7 @@ def add_communication(
     payload: CommunicationCreate,
     sent_by: str = "System",
 ) -> Communication:
-    """Record a new outbound communication."""
+    """Record a new outbound communication and send email if SMTP is configured."""
     comm = Communication(
         id=str(uuid.uuid4()),
         incident_number=incident_number,
@@ -113,10 +117,46 @@ def add_communication(
         sent_by=sent_by,
     )
     _comm_store.setdefault(incident_number, []).append(comm)
-    logger.info(
-        "Communication sent: %s [%s] for %s",
-        comm.comm_type.value,
-        comm.subject,
-        incident_number,
-    )
+
+    # Send actual email if SMTP is configured and there are recipients
+    if settings.smtp_host and payload.recipients:
+        try:
+            _send_email(payload.subject, payload.body, payload.recipients)
+            logger.info(
+                "Email sent: %s [%s] to %s for %s",
+                comm.comm_type.value,
+                comm.subject,
+                ", ".join(payload.recipients),
+                incident_number,
+            )
+        except Exception as exc:
+            logger.error(
+                "Failed to send email for %s: %s",
+                incident_number,
+                exc,
+            )
+    else:
+        logger.info(
+            "Communication recorded (no SMTP configured): %s [%s] for %s",
+            comm.comm_type.value,
+            comm.subject,
+            incident_number,
+        )
+
     return comm
+
+
+def _send_email(subject: str, body: str, recipients: list[str]) -> None:
+    """Send an email via SMTP."""
+    msg = MIMEMultipart()
+    msg["From"] = settings.smtp_from_email or settings.smtp_username
+    msg["To"] = ", ".join(recipients)
+    msg["Subject"] = subject
+    msg.attach(MIMEText(body, "plain"))
+
+    with smtplib.SMTP(settings.smtp_host, settings.smtp_port) as server:
+        if settings.smtp_use_tls:
+            server.starttls()
+        if settings.smtp_username:
+            server.login(settings.smtp_username, settings.smtp_password)
+        server.sendmail(msg["From"], recipients, msg.as_string())

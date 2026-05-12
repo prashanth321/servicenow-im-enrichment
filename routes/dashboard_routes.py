@@ -19,6 +19,9 @@ Each endpoint group corresponds to a React panel component:
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 from fastapi import APIRouter, HTTPException, Request
 
 from models.dashboard_schemas import (
@@ -55,6 +58,16 @@ from utils.logger import get_logger
 
 router = APIRouter(prefix="/incidents", tags=["dashboard"])
 logger = get_logger(__name__)
+
+_CONTACTS_FILE = Path(__file__).resolve().parent.parent / "config" / "contacts.json"
+
+
+def _load_contacts() -> dict:
+    """Load the contacts configuration file."""
+    try:
+        return json.loads(_CONTACTS_FILE.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return {"distribution_lists": [], "contacts": []}
 
 
 # ---------------------------------------------------------------------------
@@ -124,46 +137,28 @@ def _map_state(sn_state: str | None) -> str:
 # Auto-sync helper — pushes dashboard state to ServiceNow work_notes
 # ---------------------------------------------------------------------------
 
-async def _auto_sync_to_servicenow(incident_number: str) -> None:
-    """Automatically sync dashboard actions/notes/changes to ServiceNow work_notes.
+async def _auto_sync_to_servicenow(incident_number: str, latest_entry: str = "") -> None:
+    """Automatically sync the latest dashboard update to ServiceNow work_notes.
 
     Called after any mutation (add/update/delete) to action items, notes, or changes.
+    Only sends the latest change, not all accumulated data.
     Failures are logged but do not block the response.
     """
     from datetime import datetime
 
     try:
         incident = await _get_incident_detail(incident_number)
-        actions = notes_service.get_action_items(incident_number)
-        notes = notes_service.get_notes(incident_number)
-        changes = notes_service.get_changes(incident_number)
 
-        lines: list[str] = ["=== IM Dashboard Auto-Sync ==="]
+        lines: list[str] = ["=== IM Dashboard Update ==="]
         lines.append(f"Incident: {incident_number}")
-        lines.append(f"Synced at: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC")
+        lines.append(f"Updated at: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC")
         lines.append("")
 
-        if actions:
-            lines.append("--- Action Items ---")
-            for a in actions:
-                status = "✓" if a.status.value == "completed" else "○"
-                lines.append(f"  {status} {a.description} | Team: {a.team or 'N/A'} | Assignee: {a.assignee or 'Unassigned'} | Status: {a.status.value}")
+        if latest_entry:
+            lines.append(latest_entry)
             lines.append("")
 
-        if notes:
-            lines.append("--- Notes ---")
-            for n in notes[:5]:  # Last 5 notes to keep work_notes concise
-                ts = n.created_at.strftime('%H:%M') if n.created_at else ''
-                lines.append(f"  [{ts}] {n.author or 'Unknown'}: {n.content}")
-            lines.append("")
-
-        if changes:
-            lines.append("--- Infrastructure Changes ---")
-            for c in changes:
-                lines.append(f"  • {c.description} | Owner: {c.owner_team or 'N/A'} | Assignee: {c.assignee or 'N/A'}")
-            lines.append("")
-
-        lines.append("=== End Auto-Sync ===")
+        lines.append("=== End Update ===")
         work_notes = "\n".join(lines)
 
         async with ServiceNowClient() as client:
@@ -171,7 +166,7 @@ async def _auto_sync_to_servicenow(incident_number: str) -> None:
                 f"/api/now/table/incident/{incident.sys_id}",
                 json_body={"work_notes": work_notes},
             )
-        logger.info("Auto-synced dashboard to incident %s", incident_number)
+        logger.info("Auto-synced latest update to incident %s", incident_number)
     except Exception:
         logger.warning("Auto-sync failed for %s (non-blocking)", incident_number, exc_info=True)
 
@@ -344,7 +339,7 @@ async def get_servicenow_notes(incident_number: str):
 async def add_note(incident_number: str, payload: NoteCreate):
     """Add a note and sync to ServiceNow."""
     note = notes_service.add_note(incident_number, payload)
-    await _auto_sync_to_servicenow(incident_number)
+    await _auto_sync_to_servicenow(incident_number, f"[Note Added] {payload.author or 'Unknown'}: {payload.content}")
     return note
 
 
@@ -353,7 +348,7 @@ async def delete_note(incident_number: str, note_id: str):
     """Delete a note and sync to ServiceNow."""
     if not notes_service.delete_note(incident_number, note_id):
         raise HTTPException(status_code=404, detail="Note not found")
-    await _auto_sync_to_servicenow(incident_number)
+    await _auto_sync_to_servicenow(incident_number, "[Note Deleted]")
 
 
 # ---------------------------------------------------------------------------
@@ -370,7 +365,7 @@ def list_action_items(incident_number: str):
 async def add_action_item(incident_number: str, payload: ActionItemCreate):
     """Create an action item and sync to ServiceNow."""
     item = notes_service.add_action_item(incident_number, payload)
-    await _auto_sync_to_servicenow(incident_number)
+    await _auto_sync_to_servicenow(incident_number, f"[Action Added] {payload.description} | Team: {payload.team or 'N/A'} | Assignee: {payload.assignee or 'Unassigned'}")
     return item
 
 
@@ -380,7 +375,7 @@ async def update_action_item(incident_number: str, item_id: str, payload: Action
     item = notes_service.update_action_item(incident_number, item_id, payload)
     if not item:
         raise HTTPException(status_code=404, detail="Action item not found")
-    await _auto_sync_to_servicenow(incident_number)
+    await _auto_sync_to_servicenow(incident_number, f"[Action Updated] {item.description} | Status: {item.status.value}")
     return item
 
 
@@ -389,7 +384,7 @@ async def delete_action_item(incident_number: str, item_id: str):
     """Delete an action item and sync to ServiceNow."""
     if not notes_service.delete_action_item(incident_number, item_id):
         raise HTTPException(status_code=404, detail="Action item not found")
-    await _auto_sync_to_servicenow(incident_number)
+    await _auto_sync_to_servicenow(incident_number, "[Action Item Deleted]")
 
 
 # ---------------------------------------------------------------------------
@@ -402,11 +397,69 @@ def list_changes(incident_number: str):
     return notes_service.get_changes(incident_number)
 
 
+@router.get("/{incident_number}/changes/scheduled")
+async def list_scheduled_changes(incident_number: str):
+    """Fetch scheduled change requests from ServiceNow during the incident window."""
+    try:
+        incident = await _get_incident_detail(incident_number)
+        opened_at = incident.opened_at
+        if not opened_at:
+            return []
+
+        # Format the date for ServiceNow query
+        if isinstance(opened_at, str):
+            sn_date = opened_at
+        else:
+            sn_date = opened_at.strftime("%Y-%m-%d %H:%M:%S")
+
+        async with ServiceNowClient() as client:
+            # Query change_request table for changes scheduled around the incident time
+            # Look for changes that overlap with the incident window
+            resp = await client.get(
+                "/api/now/table/change_request",
+                params={
+                    "sysparm_query": (
+                        f"start_date<={sn_date}"
+                        f"^end_date>={sn_date}"
+                        f"^ORstart_date>={sn_date}"
+                        "^stateIN-1,1,2,3"
+                        "^ORDERBYDESCstart_date"
+                    ),
+                    "sysparm_fields": (
+                        "number,short_description,state,start_date,end_date,"
+                        "assignment_group,assigned_to,cmdb_ci,category,type,risk"
+                    ),
+                    "sysparm_display_value": "true",
+                    "sysparm_limit": "20",
+                },
+            )
+            results = resp.json().get("result", [])
+            changes = []
+            for r in results:
+                changes.append({
+                    "number": r.get("number", ""),
+                    "short_description": r.get("short_description", ""),
+                    "state": r.get("state", ""),
+                    "start_date": r.get("start_date", ""),
+                    "end_date": r.get("end_date", ""),
+                    "assignment_group": r.get("assignment_group", ""),
+                    "assigned_to": r.get("assigned_to", ""),
+                    "cmdb_ci": r.get("cmdb_ci", ""),
+                    "category": r.get("category", ""),
+                    "type": r.get("type", ""),
+                    "risk": r.get("risk", ""),
+                })
+            return changes
+    except Exception as e:
+        logger.warning("Failed to fetch scheduled changes for %s: %s", incident_number, e)
+        return []
+
+
 @router.post("/{incident_number}/changes", status_code=201)
 async def add_change(incident_number: str, payload: InfraChangeCreate):
     """Record an infrastructure change and sync to ServiceNow."""
     change = notes_service.add_change(incident_number, payload)
-    await _auto_sync_to_servicenow(incident_number)
+    await _auto_sync_to_servicenow(incident_number, f"[Change Recorded] {payload.description} | Owner: {payload.owner_team or 'N/A'}")
     return change
 
 
@@ -415,7 +468,7 @@ async def delete_change(incident_number: str, change_id: str):
     """Delete an infrastructure change record and sync to ServiceNow."""
     if not notes_service.delete_change(incident_number, change_id):
         raise HTTPException(status_code=404, detail="Change not found")
-    await _auto_sync_to_servicenow(incident_number)
+    await _auto_sync_to_servicenow(incident_number, "[Change Record Deleted]")
 
 
 # ---------------------------------------------------------------------------
@@ -445,8 +498,38 @@ async def list_oncall_teams(incident_number: str):
 # ---------------------------------------------------------------------------
 
 @router.get("/{incident_number}/vendor")
-def get_vendor(incident_number: str):
-    """Get vendor info for an incident."""
+async def get_vendor(incident_number: str):
+    """Get vendor info for an incident, fetched fresh from ServiceNow."""
+    try:
+        incident = await _get_incident_detail(incident_number)
+        # Try to get vendor from the CI's vendor/company field in ServiceNow
+        if incident.cmdb_ci:
+            async with ServiceNowClient() as client:
+                # Look up the CI to get its vendor/company
+                ci_resp = await client.get(
+                    f"/api/now/table/cmdb_ci/{incident.cmdb_ci}",
+                    params={
+                        "sysparm_fields": "vendor,manufacturer,support_group",
+                        "sysparm_display_value": "all",
+                    },
+                )
+                ci_data = ci_resp.json().get("result", {})
+                vendor_ref = ci_data.get("vendor") or ci_data.get("manufacturer")
+                vendor_sys_id = None
+                if isinstance(vendor_ref, dict):
+                    vendor_sys_id = vendor_ref.get("value")
+                elif isinstance(vendor_ref, str) and vendor_ref.strip():
+                    vendor_sys_id = vendor_ref.strip()
+
+                if vendor_sys_id:
+                    vendor = await vendor_service.fetch_vendor_from_servicenow(
+                        client, vendor_sys_id, incident_number
+                    )
+                    vendor_service.set_vendor_info(incident_number, vendor)
+                    return vendor
+    except Exception:
+        logger.warning("Failed to fetch vendor from SN for %s, using cached/default", incident_number)
+
     return vendor_service.get_vendor_info(incident_number)
 
 
@@ -504,8 +587,34 @@ def get_handover_info(incident_number: str):
 
 
 @router.post("/{incident_number}/handover")
-def transfer_ownership(incident_number: str, payload: HandoverRequest):
-    """Execute a shift handover (requires complete checklist)."""
+async def transfer_ownership(incident_number: str, payload: HandoverRequest):
+    """Execute a shift handover (requires complete checklist and valid SN user)."""
+    # Validate user exists in ServiceNow
+    target = payload.target_manager.strip()
+    if not target:
+        raise HTTPException(status_code=400, detail="Target manager name is required")
+
+    async with ServiceNowClient() as client:
+        resp = await client.get(
+            "/api/now/table/sys_user",
+            params={
+                "sysparm_query": f"name={target}^active=true",
+                "sysparm_fields": "sys_id,name,email,title",
+                "sysparm_limit": "1",
+            },
+        )
+        users = resp.json().get("result", [])
+        if not users:
+            raise HTTPException(
+                status_code=404,
+                detail=f"User '{target}' not found in ServiceNow. Please enter a valid user name.",
+            )
+
+        sn_user = users[0]
+        validated_name = sn_user.get("name", target)
+
+    # Perform the handover with the validated name
+    payload.target_manager = validated_name
     record = handover_service.transfer_ownership(incident_number, payload)
     if record is None:
         incomplete = handover_service.validate_checklist(payload.checklist)
@@ -513,6 +622,23 @@ def transfer_ownership(incident_number: str, payload: HandoverRequest):
             status_code=400,
             detail=f"Handover blocked — incomplete items: {', '.join(incomplete)}",
         )
+
+    # Update assigned_to in ServiceNow
+    try:
+        incident = await _get_incident_detail(incident_number)
+        if incident.sys_id:
+            async with ServiceNowClient() as client:
+                await client.patch(
+                    f"/api/now/table/incident/{incident.sys_id}",
+                    json_body={
+                        "assigned_to": sn_user["sys_id"],
+                        "work_notes": f"[IM Dashboard] Shift handover: assigned to {validated_name}",
+                    },
+                )
+                logger.info("Incident %s reassigned to %s in ServiceNow", incident_number, validated_name)
+    except Exception as exc:
+        logger.warning("Failed to update assigned_to in SN for %s: %s", incident_number, exc)
+
     return record
 
 
@@ -563,7 +689,15 @@ def publish_to_confluence(incident_number: str):
 @router.post("/{incident_number}/resolve")
 async def resolve_incident(incident_number: str, payload: ResolutionRequest):
     """Resolve the incident in ServiceNow."""
+    if not payload.resolution_notes or not payload.resolution_notes.strip():
+        raise HTTPException(status_code=400, detail="Resolution notes are required")
+
     incident = await _get_incident_detail(incident_number)
+    if not incident.sys_id:
+        raise HTTPException(status_code=400, detail="Could not find sys_id for incident")
+
+    logger.info("Resolving incident %s (sys_id=%s)", incident_number, incident.sys_id)
+
     async with ServiceNowClient() as client:
         success = await resolution_service.resolve_incident_in_servicenow(
             client,
@@ -571,8 +705,37 @@ async def resolve_incident(incident_number: str, payload: ResolutionRequest):
             resolution_notes=payload.resolution_notes,
             close_code=payload.close_code or "Solved (Permanently)",
         )
-    if not success:
-        raise HTTPException(status_code=500, detail="Failed to resolve in ServiceNow")
+
+        if not success:
+            logger.error("Resolve failed for %s (sys_id=%s)", incident_number, incident.sys_id)
+            raise HTTPException(
+                status_code=500,
+                detail=(
+                    "Failed to resolve in ServiceNow. The incident state was not updated. "
+                    "Check that the incident is not already resolved/closed, and that "
+                    "mandatory fields (caller, assignment group) are populated in ServiceNow."
+                ),
+            )
+
+        # Also add resolution notes as a work_note for audit trail
+        try:
+            await client.patch(
+                f"/api/now/table/incident/{incident.sys_id}",
+                json_body={
+                    "work_notes": f"[IM Dashboard Resolution]\n{payload.resolution_notes}",
+                },
+            )
+        except Exception:
+            logger.warning("Failed to add resolution work_note for %s", incident_number)
+
+    # Auto-generate a basic resolution record if one doesn't exist
+    if not resolution_service.get_resolution(incident_number):
+        resolution_service.generate_summary(
+            incident_number,
+            payload.resolution_notes,
+            {"short_description": incident.short_description},
+        )
+
     return {"status": "resolved", "incident": incident_number}
 
 
@@ -658,15 +821,74 @@ async def get_dashboard(incident_number: str):
     """
     incident = await _get_incident_detail(incident_number)
 
-    # Fetch priority history from SN
+    # Fetch priority history and vendor info from SN
     priority_history = []
+    vendor_info = None
     try:
         async with ServiceNowClient() as client:
             priority_history = await priority_service.fetch_priority_history_from_sn(
                 client, incident.sys_id, incident_number
             )
+
+            # Fetch live vendor data from ServiceNow via CI
+            if incident.cmdb_ci:
+                try:
+                    ci_resp = await client.get(
+                        f"/api/now/table/cmdb_ci/{incident.cmdb_ci}",
+                        params={
+                            "sysparm_fields": "vendor,manufacturer,support_group",
+                            "sysparm_display_value": "all",
+                        },
+                    )
+                    ci_data = ci_resp.json().get("result", {})
+                    vendor_ref = ci_data.get("vendor") or ci_data.get("manufacturer")
+                    vendor_sys_id = None
+                    if isinstance(vendor_ref, dict):
+                        vendor_sys_id = vendor_ref.get("value")
+                    elif isinstance(vendor_ref, str) and vendor_ref.strip():
+                        vendor_sys_id = vendor_ref.strip()
+
+                    if vendor_sys_id:
+                        vendor_info = await vendor_service.fetch_vendor_from_servicenow(
+                            client, vendor_sys_id, incident_number
+                        )
+                        vendor_service.set_vendor_info(incident_number, vendor_info)
+                except Exception:
+                    logger.warning("Vendor fetch from SN failed for %s in dashboard", incident_number)
     except Exception:
         priority_history = priority_service.get_priority_history(incident_number)
+
+    if vendor_info is None:
+        vendor_info = vendor_service.get_vendor_info(incident_number)
+
+    # Also try fetching vendor from SN via the assignment group's company if CI had no vendor
+    if vendor_info is None and incident.assignment_group:
+        try:
+            async with ServiceNowClient() as client:
+                grp_resp = await client.get(
+                    "/api/now/table/sys_user_group",
+                    params={
+                        "sysparm_query": f"name={incident.assignment_group}",
+                        "sysparm_fields": "u_vendor,company",
+                        "sysparm_display_value": "all",
+                        "sysparm_limit": "1",
+                    },
+                )
+                grp_data = grp_resp.json().get("result", [])
+                if grp_data:
+                    vendor_ref = grp_data[0].get("u_vendor") or grp_data[0].get("company")
+                    vendor_sys_id = None
+                    if isinstance(vendor_ref, dict):
+                        vendor_sys_id = vendor_ref.get("value")
+                    elif isinstance(vendor_ref, str) and vendor_ref.strip():
+                        vendor_sys_id = vendor_ref.strip()
+                    if vendor_sys_id:
+                        vendor_info = await vendor_service.fetch_vendor_from_servicenow(
+                            client, vendor_sys_id, incident_number
+                        )
+                        vendor_service.set_vendor_info(incident_number, vendor_info)
+        except Exception:
+            logger.warning("Vendor fetch via assignment group failed for %s", incident_number)
 
     return DashboardData(
         incident=incident,
@@ -676,7 +898,7 @@ async def get_dashboard(incident_number: str):
         notes=notes_service.get_notes(incident_number),
         action_items=notes_service.get_action_items(incident_number),
         changes=notes_service.get_changes(incident_number),
-        vendor_info=vendor_service.get_vendor_info(incident_number),
+        vendor_info=vendor_info,
         priority_history=priority_history,
         handovers=handover_service.get_handover_history(incident_number),
         resolution=resolution_service.get_resolution(incident_number),

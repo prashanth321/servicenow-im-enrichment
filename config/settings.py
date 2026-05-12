@@ -32,6 +32,14 @@ class Settings(BaseSettings):
     polling_interval_seconds: int = 60
     log_level: str = "INFO"
 
+    # SMTP / email settings
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_username: str = ""
+    smtp_password: str = ""
+    smtp_from_email: str = ""
+    smtp_use_tls: bool = True
+
     model_config = {
         "env_file": str(_ENV_FILE),
         "env_file_encoding": "utf-8",

@@ -265,7 +265,36 @@ app.include_router(incidents_router)
 
 # Register the dashboard routes (converted from React IM Dashboard)
 from routes.dashboard_routes import router as dashboard_router  # noqa: E402
+from routes.dashboard_routes import _load_contacts  # noqa: E402
 app.include_router(dashboard_router)
+
+
+@app.get("/contacts")
+def get_contacts():
+    """Return the email contacts configuration."""
+    return _load_contacts()
+
+
+@app.get("/users/search")
+async def search_servicenow_users(q: str = ""):
+    """Search ServiceNow sys_user table by name (for handover autocomplete)."""
+    if not q or len(q) < 2:
+        return []
+    async with ServiceNowClient() as client:
+        resp = await client.get(
+            "/api/now/table/sys_user",
+            params={
+                "sysparm_query": f"nameLIKE{q}^active=true",
+                "sysparm_fields": "sys_id,name,email,title",
+                "sysparm_limit": "10",
+            },
+        )
+        results = resp.json().get("result", [])
+        return [
+            {"sys_id": u.get("sys_id", ""), "name": u.get("name", ""), "email": u.get("email", ""), "title": u.get("title", "")}
+            for u in results
+        ]
+
 
 # Serve the static dashboard UI
 _STATIC_DIR = Path(__file__).resolve().parent / "static"

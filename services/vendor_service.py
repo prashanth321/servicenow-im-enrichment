@@ -44,11 +44,9 @@ def _default_vendor() -> VendorInfo:
     )
 
 
-def get_vendor_info(incident_number: str) -> VendorInfo:
-    """Return vendor info for an incident, using defaults if not set."""
-    if incident_number not in _vendor_store:
-        _vendor_store[incident_number] = _default_vendor()
-    return _vendor_store[incident_number]
+def get_vendor_info(incident_number: str) -> VendorInfo | None:
+    """Return vendor info for an incident, or None if not available."""
+    return _vendor_store.get(incident_number)
 
 
 def set_vendor_info(incident_number: str, vendor: VendorInfo) -> VendorInfo:

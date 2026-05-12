@@ -111,7 +111,7 @@
             <!-- Handover -->
             <div class="card">
                 <div class="card-header flex items-center justify-between">
-                    <span class="font-semibold text-sm">🔄 Shift Handover</span>
+                    <span class="font-semibold text-sm">🔄 In Shift Incident Manager</span>
                 </div>
                 <div class="card-body" id="handoverPanel">
                     <div class="loading">Select an incident</div>
@@ -135,6 +135,7 @@
                     <div class="tab" data-tab="actions" onclick="switchTab('actions')">☑ Actions</div>
                     <div class="tab" data-tab="changes" onclick="switchTab('changes')">🔧 Changes</div>
                     <div class="tab" data-tab="comms" onclick="switchTab('comms')">📨 Communications</div>
+                    <div class="tab" data-tab="teams" onclick="switchTab('teams')">💬 Teams</div>
                 </div>
                 <!-- Notes Tab -->
                 <div class="card-body tab-content" id="tab-notes">
@@ -165,12 +166,47 @@
                         <input id="changeAssignee" class="input" placeholder="Assignee">
                         <button class="btn btn-primary btn-sm" onclick="addChange()">Add</button>
                     </div>
-                    <div id="changesList" class="space-y-2"></div>
+                    <h4 class="text-xs font-semibold text-slate-600 uppercase mb-1">Manual Changes</h4>
+                    <div id="changesList" class="space-y-2 mb-4"></div>
+                    <h4 class="text-xs font-semibold text-slate-600 uppercase mb-1">Scheduled Changes (ServiceNow)</h4>
+                    <div id="snChangesList" class="space-y-2"></div>
                 </div>
                 <!-- Comms Tab -->
                 <div class="card-body tab-content hidden" id="tab-comms">
                     <button class="btn btn-primary btn-sm mb-3 admin-only" onclick="showCommModal()">📧 Send Update</button>
                     <div id="commsList" class="space-y-2"></div>
+                </div>
+                <!-- Teams Tab -->
+                <div class="card-body tab-content hidden" id="tab-teams">
+                    <!-- Create Group Chat -->
+                    <h4 class="text-xs font-semibold text-slate-600 uppercase mb-2">Create Group Chat</h4>
+                    <div class="flex gap-2 mb-2">
+                        <input id="teamsMeetingSubject" class="input" placeholder="Chat subject (e.g. INC bridge)" style="flex:1">
+                    </div>
+                    <!-- Add participants -->
+                    <h4 class="text-xs font-semibold text-slate-600 uppercase mb-2 mt-3">Participants</h4>
+                    <div class="flex gap-2 mb-2">
+                        <input id="teamsParticipantEmail" class="input" placeholder="Enter email address..." style="flex:1">
+                        <button class="btn btn-ghost btn-sm" onclick="addTeamsParticipant()">+ Add</button>
+                    </div>
+                    <!-- Quick add from stakeholders -->
+                    <div class="flex flex-wrap gap-1 mb-2" id="teamsQuickAddStakeholders"></div>
+                    <!-- Participant list -->
+                    <div id="teamsParticipantList" class="space-y-1 mb-3">
+                        <div class="text-sm text-slate-500">No participants added yet</div>
+                    </div>
+                    <div class="flex gap-2">
+                        <button class="btn btn-primary" onclick="createTeamsGroupChat()">💬 Create Group Chat</button>
+                        <button class="btn btn-ghost btn-sm" onclick="clearTeamsParticipants()">Clear All</button>
+                    </div>
+                    <div class="separator"></div>
+                    <!-- Direct Chat / Call -->
+                    <h4 class="text-xs font-semibold text-slate-600 uppercase mb-2">Direct Chat / Call</h4>
+                    <div class="flex gap-2 mb-2">
+                        <input id="teamsQuickEmail" class="input" placeholder="Enter email address..." style="flex:1">
+                        <button class="btn btn-ghost btn-sm" onclick="teamsChat(document.getElementById('teamsQuickEmail').value)" title="Start Chat">💬 Chat</button>
+                        <button class="btn btn-ghost btn-sm" onclick="teamsCall(document.getElementById('teamsQuickEmail').value)" title="Start Call">📞 Call</button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -181,7 +217,10 @@
             <div class="card">
                 <div class="card-header flex items-center justify-between">
                     <span class="font-semibold text-sm">👥 Stakeholders</span>
-                    <button class="btn btn-ghost btn-sm admin-only" onclick="showAddStakeholderModal()">+ Add</button>
+                    <div class="flex items-center gap-1">
+                        <button class="btn btn-ghost btn-sm" onclick="teamsGroupChatAllStakeholders()" title="Teams Group Chat">💬 Teams</button>
+                        <button class="btn btn-ghost btn-sm admin-only" onclick="showAddStakeholderModal()">+ Add</button>
+                    </div>
                 </div>
                 <div class="card-body space-y-2" id="stakeholdersList">
                     <div class="text-sm text-slate-500">No stakeholders</div>
@@ -200,7 +239,14 @@
                     <span class="font-semibold text-sm">✅ Resolution</span>
                 </div>
                 <div class="card-body admin-only" id="resolutionPanel">
+                    <div class="flex items-center gap-2 mb-2">
+                        <label class="text-sm text-slate-600 flex items-center gap-1">
+                            <input type="checkbox" id="confirmResolve" onchange="toggleResolveBtn()">
+                            I confirm this incident is fully resolved
+                        </label>
+                    </div>
                     <button class="btn btn-danger w-full" onclick="showResolveModal()" id="resolveBtn" disabled>Resolve Incident</button>
+                    <p class="text-xs text-slate-500 mt-1">Leave unchecked to resolve later after fixing errors</p>
                 </div>
             </div>
         </div>
@@ -224,7 +270,20 @@
             </select>
             <input id="commSubject" class="input" placeholder="Subject">
             <textarea id="commBody" class="input" rows="6" placeholder="Message body"></textarea>
-            <input id="commRecipients" class="input" placeholder="Recipients (comma-separated emails)">
+            <div>
+                <label class="text-sm text-slate-600 mb-1 block">Recipients</label>
+                <div id="contactPickerArea" class="mb-2">
+                    <div class="flex gap-2 mb-2">
+                        <select id="contactSelect" class="input" style="flex:1">
+                            <option value="">-- Select from contacts --</option>
+                        </select>
+                        <button class="btn btn-ghost btn-sm" onclick="addSelectedContact()">+ Add</button>
+                    </div>
+                    <div id="distListArea" class="flex flex-wrap gap-1 mb-2"></div>
+                </div>
+                <input id="commRecipients" class="input" placeholder="Recipients (comma-separated emails)">
+                <p class="text-xs text-slate-500 mt-1">Select from contacts above or type emails manually</p>
+            </div>
             <div class="flex justify-end gap-2">
                 <button class="btn btn-ghost" onclick="document.getElementById('commModal').classList.add('hidden')">Cancel</button>
                 <button class="btn btn-primary" onclick="sendComm()">Send</button>
@@ -275,7 +334,7 @@
 <div id="handoverModal" class="modal-overlay hidden" onclick="if(event.target===this)this.classList.add('hidden')">
     <div class="modal">
         <div class="card-header flex items-center justify-between">
-            <span class="font-semibold">Shift Handover Checklist</span>
+            <span class="font-semibold">In Shift Incident Manager Checklist</span>
             <button class="btn btn-ghost btn-sm" onclick="document.getElementById('handoverModal').classList.add('hidden')">✕</button>
         </div>
         <div class="card-body space-y-3">
@@ -286,10 +345,14 @@
             <label class="flex items-center gap-2 text-sm"><input type="checkbox" id="hc4"> Vendor status confirmed</label>
             <label class="flex items-center gap-2 text-sm"><input type="checkbox" id="hc5"> Escalation points identified</label>
             <div class="separator"></div>
-            <input id="handoverTarget" class="input" placeholder="Transfer to (manager name)">
+            <div class="relative">
+                <input id="handoverTarget" class="input" placeholder="Search ServiceNow user..." oninput="searchHandoverUser(this.value)" autocomplete="off">
+                <div id="handoverUserResults" class="absolute left-0 right-0 top-full bg-white border border-[#e2e8f0] rounded-lg shadow-lg max-h-40 overflow-y-auto z-50 hidden"></div>
+                <div id="handoverUserValid" class="text-xs mt-1 hidden"></div>
+            </div>
             <div class="flex justify-end gap-2">
                 <button class="btn btn-ghost" onclick="document.getElementById('handoverModal').classList.add('hidden')">Cancel</button>
-                <button class="btn btn-primary" onclick="doHandover()">Confirm Transfer</button>
+                <button class="btn btn-primary" id="handoverConfirmBtn" onclick="doHandover()" disabled>Confirm Transfer</button>
             </div>
         </div>
     </div>
@@ -480,6 +543,7 @@ async function loadDashboard() {
         renderHeader(dashboardData.incident);
         renderSLAClocks(dashboardData.sla_clocks);
         renderStakeholders(dashboardData.stakeholders);
+        renderTeamsStakeholders(dashboardData.stakeholders);
         renderComms(dashboardData.communications);
         renderNotes(dashboardData.notes);
         renderActions(dashboardData.action_items);
@@ -489,11 +553,16 @@ async function loadDashboard() {
         renderHandover();
         renderResolution(dashboardData.resolution);
         const resolveBtn = document.getElementById('resolveBtn');
-        if (resolveBtn) resolveBtn.disabled = false;
+        const confirmBox = document.getElementById('confirmResolve');
+        if (resolveBtn && confirmBox) {
+            confirmBox.checked = false;
+            resolveBtn.disabled = true;
+        }
         document.getElementById('incidentHeader').classList.remove('hidden');
         startSLATicker();
-        // Load ServiceNow notes in background
+        // Load ServiceNow notes and scheduled changes in background
         loadSNNotes();
+        loadScheduledChanges();
         // Re-apply role restrictions after dynamic render
         if (userRole === 'readonly') {
             document.querySelectorAll('.admin-only').forEach(el => el.style.display = 'none');
@@ -523,7 +592,7 @@ function renderHeader(inc) {
         <div class="flex flex-wrap items-center gap-2 mt-2">
             ${inc.service_offering ? `<span class="badge badge-blue">Service Offering: ${inc.service_offering}</span>` : ''}
             ${inc.ci_name ? `<span class="badge badge-blue">CI: ${inc.ci_name}</span>` : ''}
-            ${inc.business_impact ? `<span class="badge ${inc.business_impact === 'High' ? 'badge-red' : inc.business_impact === 'Medium' ? 'badge-amber' : 'badge-green'}">Impact: ${inc.business_impact}</span>` : ''}
+            ${inc.business_impact ? `<span class="badge ${inc.business_impact === 'Low' ? 'badge-green' : inc.business_impact === 'Medium' ? 'badge-amber' : 'badge-red'}">Impact: ${inc.business_impact}</span>` : ''}
         </div>
     `;
     document.getElementById('headerInfo').innerHTML = `
@@ -615,12 +684,101 @@ function renderStakeholders(list) {
             <div>
                 <div class="text-sm font-medium">${s.name}</div>
                 <div class="text-xs text-slate-600">${s.role}${s.team ? ' · ' + s.team : ''}</div>
+                ${s.email ? `<div class="text-xs text-slate-500">${s.email}</div>` : ''}
             </div>
-            <button class="text-xs text-slate-500 hover:text-red-400" onclick="removeStakeholder('${s.id}')">✕</button>
+            <div class="flex items-center gap-1">
+                ${s.email ? `
+                    <button class="btn btn-ghost btn-sm" title="Teams Chat" onclick="teamsChat('${s.email}')">💬</button>
+                    <button class="btn btn-ghost btn-sm" title="Teams Call" onclick="teamsCall('${s.email}')">📞</button>
+                ` : ''}
+                <button class="text-xs text-slate-500 hover:text-red-400" onclick="removeStakeholder('${s.id}')">✕</button>
+            </div>
         </div>
     `).join('');
 }
 function showAddStakeholderModal() { document.getElementById('stakeholderModal').classList.remove('hidden'); }
+
+// ── Microsoft Teams Integration ──
+function teamsChat(email) {
+    if (!email) { alert('No email available for this stakeholder'); return; }
+    const msg = currentIncident ? `Regarding incident ${currentIncident}` : '';
+    window.open(`https://teams.microsoft.com/l/chat/0/0?users=${encodeURIComponent(email)}&message=${encodeURIComponent(msg)}`, '_blank');
+}
+function teamsCall(email) {
+    if (!email) { alert('No email available for this stakeholder'); return; }
+    window.open(`https://teams.microsoft.com/l/call/0/0?users=${encodeURIComponent(email)}`, '_blank');
+}
+function teamsGroupChat(emails) {
+    if (!emails || !emails.length) { alert('No recipients selected'); return; }
+    const msg = currentIncident ? `Incident bridge: ${currentIncident}` : '';
+    window.open(`https://teams.microsoft.com/l/chat/0/0?users=${emails.map(e => encodeURIComponent(e)).join(',')}&message=${encodeURIComponent(msg)}`, '_blank');
+}
+function teamsGroupChatAllStakeholders() {
+    if (!dashboardData || !dashboardData.stakeholders) { alert('No stakeholders loaded'); return; }
+    const emails = dashboardData.stakeholders.filter(s => s.email).map(s => s.email);
+    if (!emails.length) { alert('No stakeholders have email addresses'); return; }
+    teamsGroupChat(emails);
+}
+// ── Teams Group Chat Builder ──
+let teamsParticipants = [];
+
+function renderTeamsStakeholders(list) {
+    const el = document.getElementById('teamsQuickAddStakeholders');
+    if (!el) return;
+    if (!list || !list.length) { el.innerHTML = ''; return; }
+    el.innerHTML = '<span class="text-xs text-slate-500 mr-1">Quick add:</span>' + list.filter(s => s.email).map(s => `
+        <button class="badge badge-blue cursor-pointer hover:opacity-80" onclick="addTeamsParticipantByEmail('${s.email}', '${s.name}')" title="Add ${s.name}">${s.name}</button>
+    `).join('');
+}
+
+function addTeamsParticipant() {
+    const input = document.getElementById('teamsParticipantEmail');
+    const email = input.value.trim();
+    if (!email) return;
+    if (teamsParticipants.find(p => p.email === email)) { alert('Already added'); return; }
+    teamsParticipants.push({ email, name: email });
+    input.value = '';
+    renderTeamsParticipantList();
+}
+
+function addTeamsParticipantByEmail(email, name) {
+    if (teamsParticipants.find(p => p.email === email)) return;
+    teamsParticipants.push({ email, name });
+    renderTeamsParticipantList();
+}
+
+function removeTeamsParticipant(email) {
+    teamsParticipants = teamsParticipants.filter(p => p.email !== email);
+    renderTeamsParticipantList();
+}
+
+function clearTeamsParticipants() {
+    teamsParticipants = [];
+    renderTeamsParticipantList();
+}
+
+function renderTeamsParticipantList() {
+    const el = document.getElementById('teamsParticipantList');
+    if (!teamsParticipants.length) { el.innerHTML = '<div class="text-sm text-slate-500">No participants added yet</div>'; return; }
+    el.innerHTML = teamsParticipants.map(p => `
+        <div class="flex items-center justify-between p-2 rounded bg-[#f1f5f9]">
+            <div>
+                <span class="text-sm font-medium">${p.name}</span>
+                ${p.name !== p.email ? `<span class="text-xs text-slate-500 ml-1">${p.email}</span>` : ''}
+            </div>
+            <button class="text-xs text-slate-500 hover:text-red-400" onclick="removeTeamsParticipant('${p.email}')">✕</button>
+        </div>
+    `).join('');
+}
+
+function createTeamsGroupChat() {
+    if (!teamsParticipants.length) { alert('Add at least one participant'); return; }
+    const subject = document.getElementById('teamsMeetingSubject').value.trim() || (currentIncident ? `Incident bridge: ${currentIncident}` : 'Group Chat');
+    const emails = teamsParticipants.map(p => p.email);
+    const url = `https://teams.microsoft.com/l/chat/0/0?users=${emails.map(e => encodeURIComponent(e)).join(',')}&topicName=${encodeURIComponent(subject)}&message=${encodeURIComponent(subject)}`;
+    window.open(url, '_blank');
+}
+
 async function addStakeholder() {
     const data = { name: document.getElementById('shName').value, role: document.getElementById('shRole').value, team: document.getElementById('shTeam').value, email: document.getElementById('shEmail').value };
     if (!data.name) return;
@@ -628,11 +786,13 @@ async function addStakeholder() {
     document.getElementById('stakeholderModal').classList.add('hidden');
     const list = await api(`/incidents/${currentIncident}/stakeholders`);
     renderStakeholders(list);
+    renderTeamsStakeholders(list);
 }
 async function removeStakeholder(id) {
     await api(`/incidents/${currentIncident}/stakeholders/${id}`, { method: 'DELETE' });
     const list = await api(`/incidents/${currentIncident}/stakeholders`);
     renderStakeholders(list);
+    renderTeamsStakeholders(list);
 }
 
 // ── Render: Communications ──
@@ -649,7 +809,74 @@ function renderComms(list) {
         </div>
     `).join('');
 }
-function showCommModal() { document.getElementById('commModal').classList.remove('hidden'); loadTemplate(); }
+function showCommModal() {
+    document.getElementById('commModal').classList.remove('hidden');
+    loadTemplate();
+    loadContacts();
+}
+
+let _contactsCache = null;
+async function loadContacts() {
+    try {
+        if (!_contactsCache) {
+            _contactsCache = await api('/contacts');
+        }
+        const sel = document.getElementById('contactSelect');
+        // Clear previous options (keep first)
+        sel.innerHTML = '<option value="">-- Select from contacts --</option>';
+        // Add individual contacts
+        if (_contactsCache.contacts) {
+            const grp = document.createElement('optgroup');
+            grp.label = 'Contacts';
+            _contactsCache.contacts.forEach(c => {
+                const opt = document.createElement('option');
+                opt.value = c.email;
+                opt.textContent = `${c.name} (${c.role}) — ${c.email}`;
+                grp.appendChild(opt);
+            });
+            sel.appendChild(grp);
+        }
+        // Render distribution list buttons
+        const dlArea = document.getElementById('distListArea');
+        dlArea.innerHTML = '';
+        if (_contactsCache.distribution_lists) {
+            _contactsCache.distribution_lists.forEach(dl => {
+                const btn = document.createElement('button');
+                btn.className = 'btn btn-ghost btn-sm';
+                btn.textContent = `📋 ${dl.name}`;
+                btn.title = dl.emails.join(', ');
+                btn.onclick = () => addDistList(dl.emails);
+                dlArea.appendChild(btn);
+            });
+        }
+    } catch (e) {
+        console.warn('Could not load contacts:', e.message);
+    }
+}
+function addSelectedContact() {
+    const sel = document.getElementById('contactSelect');
+    const email = sel.value;
+    if (!email) return;
+    const inp = document.getElementById('commRecipients');
+    const current = inp.value.split(',').map(s => s.trim()).filter(Boolean);
+    if (!current.includes(email)) {
+        current.push(email);
+        inp.value = current.join(', ');
+    }
+    sel.value = '';
+}
+function addDistList(emails) {
+    const inp = document.getElementById('commRecipients');
+    const current = inp.value.split(',').map(s => s.trim()).filter(Boolean);
+    emails.forEach(e => { if (!current.includes(e)) current.push(e); });
+    inp.value = current.join(', ');
+}
+
+function toggleResolveBtn() {
+    const btn = document.getElementById('resolveBtn');
+    const cb = document.getElementById('confirmResolve');
+    if (btn && cb) btn.disabled = !cb.checked;
+}
 async function loadTemplate() {
     if (!currentIncident) return;
     const type = document.getElementById('commType').value;
@@ -781,6 +1008,38 @@ function renderChanges(list) {
         </div>
     `).join('');
 }
+
+function renderScheduledChanges(list) {
+    const el = document.getElementById('snChangesList');
+    if (!list || !list.length) { el.innerHTML = '<div class="text-sm text-slate-500">No scheduled changes found</div>'; return; }
+    el.innerHTML = list.map(c => `
+        <div class="p-2 rounded bg-[#f1f5f9] border-l-2 border-purple-500">
+            <div class="flex items-center gap-2 mb-1">
+                <span class="text-xs font-medium text-purple-600">${c.number}</span>
+                <span class="badge badge-amber text-[10px]">${c.state || 'Scheduled'}</span>
+                ${c.risk ? `<span class="badge ${c.risk === 'High' ? 'badge-red' : c.risk === 'Medium' ? 'badge-amber' : 'badge-green'} text-[10px]">Risk: ${c.risk}</span>` : ''}
+            </div>
+            <p class="text-sm">${c.short_description || 'No description'}</p>
+            <div class="text-xs text-slate-500 mt-1">
+                ${c.start_date ? 'Start: ' + c.start_date : ''} ${c.end_date ? '→ End: ' + c.end_date : ''}
+            </div>
+            <div class="text-xs text-slate-500">
+                ${c.assignment_group ? 'Group: ' + c.assignment_group : ''} ${c.assigned_to ? '· ' + c.assigned_to : ''}
+                ${c.cmdb_ci ? '· CI: ' + c.cmdb_ci : ''}
+            </div>
+        </div>
+    `).join('');
+}
+
+async function loadScheduledChanges() {
+    if (!currentIncident) return;
+    try {
+        const changes = await api(`/incidents/${currentIncident}/changes/scheduled`);
+        renderScheduledChanges(changes);
+    } catch (e) {
+        document.getElementById('snChangesList').innerHTML = '<div class="text-sm text-slate-500">Could not fetch scheduled changes</div>';
+    }
+}
 async function addChange() {
     const data = { description: document.getElementById('changeDesc').value, owner_team: document.getElementById('changeTeam').value, assignee: document.getElementById('changeAssignee').value };
     if (!data.description) return;
@@ -805,7 +1064,7 @@ function switchTab(name) {
 // ── Render: Vendor ──
 function renderVendor(v) {
     const el = document.getElementById('vendorPanel');
-    if (!v) { el.innerHTML = '<div class="text-sm text-slate-500">No vendor info</div>'; return; }
+    if (!v || !v.vendor_name) { el.innerHTML = '<div class="text-sm text-slate-500">No vendor information linked to this incident in ServiceNow</div>'; return; }
     el.innerHTML = `
         <div class="space-y-2">
             <div class="font-medium">${v.vendor_name}</div>
@@ -873,7 +1132,7 @@ async function renderHandover() {
 
 async function doHandover() {
     const target = document.getElementById('handoverTarget').value;
-    if (!target) { alert('Enter target manager name'); return; }
+    if (!target) { alert('Please search and select a valid ServiceNow user'); return; }
     const checklist = {
         status_reviewed: document.getElementById('hc1').checked,
         actions_transferred: document.getElementById('hc2').checked,
@@ -885,7 +1144,54 @@ async function doHandover() {
         await api(`/incidents/${currentIncident}/handover`, { method: 'POST', body: JSON.stringify({ target_manager: target, checklist }) });
         document.getElementById('handoverModal').classList.add('hidden');
         renderHandover();
+        loadDashboard(); // Refresh to show updated assigned_to
     } catch (e) { alert(e.message); }
+}
+
+// ── User Search for Handover ──
+let _searchTimeout = null;
+function searchHandoverUser(query) {
+    const resultsEl = document.getElementById('handoverUserResults');
+    const validEl = document.getElementById('handoverUserValid');
+    const confirmBtn = document.getElementById('handoverConfirmBtn');
+    confirmBtn.disabled = true;
+    validEl.classList.add('hidden');
+
+    if (!query || query.length < 2) {
+        resultsEl.classList.add('hidden');
+        return;
+    }
+    clearTimeout(_searchTimeout);
+    _searchTimeout = setTimeout(async () => {
+        try {
+            const users = await api(`/users/search?q=${encodeURIComponent(query)}`);
+            if (!users || !users.length) {
+                resultsEl.innerHTML = '<div class="p-2 text-sm text-slate-500">No users found in ServiceNow</div>';
+                resultsEl.classList.remove('hidden');
+                validEl.innerHTML = '<span class="text-red-500">⚠ User not found in ServiceNow</span>';
+                validEl.classList.remove('hidden');
+                return;
+            }
+            resultsEl.innerHTML = users.map(u => `
+                <div class="p-2 hover:bg-[#f1f5f9] cursor-pointer border-b border-[#e2e8f0] last:border-0" onclick="selectHandoverUser('${u.name.replace(/'/g, "\\'")}')">
+                    <div class="text-sm font-medium">${u.name}</div>
+                    <div class="text-xs text-slate-500">${u.title || 'No title'} ${u.email ? '· ' + u.email : ''}</div>
+                </div>
+            `).join('');
+            resultsEl.classList.remove('hidden');
+        } catch (e) {
+            resultsEl.innerHTML = '<div class="p-2 text-sm text-red-500">Search failed</div>';
+            resultsEl.classList.remove('hidden');
+        }
+    }, 300);
+}
+function selectHandoverUser(name) {
+    document.getElementById('handoverTarget').value = name;
+    document.getElementById('handoverUserResults').classList.add('hidden');
+    const validEl = document.getElementById('handoverUserValid');
+    validEl.innerHTML = '<span class="text-green-500">✓ Valid ServiceNow user</span>';
+    validEl.classList.remove('hidden');
+    document.getElementById('handoverConfirmBtn').disabled = false;
 }
 
 // ── Resolution ──
@@ -940,6 +1246,13 @@ async function generateSummary() {
 }
 
 async function resolveIncident() {
+    // Guard: require explicit confirmation checkbox
+    const confirmBox = document.getElementById('confirmResolve');
+    if (confirmBox && !confirmBox.checked) {
+        alert('Please confirm the incident is fully resolved before proceeding.');
+        return;
+    }
+    if (!confirm('Are you sure you want to resolve this incident in ServiceNow? This will update the incident status to Resolved.')) return;
     try {
         // Include AI summary edits in resolution notes if generated
         let notes = document.getElementById('resolveNotes').value;
@@ -951,14 +1264,24 @@ async function resolveIncident() {
             if (rootCause) notes += '\n\nRoot Cause: ' + rootCause;
             if (actions) notes += '\n\nActions Taken:\n' + actions;
         }
+        if (!notes || !notes.trim()) {
+            alert('Resolution notes are required.');
+            return;
+        }
         await api(`/incidents/${currentIncident}/resolve`, {
             method: 'POST',
             body: JSON.stringify({ resolution_notes: notes, close_code: document.getElementById('resolveCode').value }),
         });
-        // Publish to confluence
-        const pub = await api(`/incidents/${currentIncident}/resolution/publish`, { method: 'POST' });
+        // Try to publish to confluence (non-blocking)
+        let confluenceUrl = 'N/A';
+        try {
+            const pub = await api(`/incidents/${currentIncident}/resolution/publish`, { method: 'POST' });
+            confluenceUrl = pub.confluence_url || 'N/A';
+        } catch (e) {
+            console.warn('Confluence publish skipped:', e.message);
+        }
         document.getElementById('resolveModal').classList.add('hidden');
-        alert('Incident resolved! Confluence: ' + (pub.confluence_url || 'N/A'));
+        alert('Incident resolved successfully!' + (confluenceUrl !== 'N/A' ? ' Confluence: ' + confluenceUrl : ''));
         loadDashboard();
     } catch (e) { alert('Error: ' + e.message); }
 }

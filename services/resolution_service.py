@@ -158,25 +158,74 @@ async def resolve_incident_in_servicenow(
 ) -> bool:
     """PATCH the incident in ServiceNow to mark it as resolved.
 
-    Sets state=6 (Resolved), close_code, and close_notes.
+    Sets state=6 (Resolved), close_code/resolution_code, and close_notes.
+    Sends all fields in a single PATCH to satisfy data policies that
+    validate mandatory fields when state transitions to Resolved.
     """
     log = get_logger(__name__, incident_sys_id)
 
     try:
+        log.info(
+            "Attempting to resolve incident %s — close_code=%s",
+            incident_sys_id, close_code,
+        )
+
+        # Single PATCH with all resolution fields + state change.
+        # Include both close_code and resolution_code to handle instances
+        # where the "Resolution code" field maps to either column name.
         response = await client.patch(
             f"/api/now/table/incident/{incident_sys_id}",
             json_body={
                 "state": "6",
+                "incident_state": "6",
                 "close_code": close_code,
+                "resolution_code": close_code,
                 "close_notes": resolution_notes,
             },
         )
 
         if response.status_code >= 400:
-            log.error("Failed to resolve incident — HTTP %s", response.status_code)
+            try:
+                err_body = response.json()
+            except Exception:
+                err_body = response.text
+            log.error(
+                "Failed to resolve incident — HTTP %s — %s",
+                response.status_code, err_body,
+            )
             return False
 
-        log.info("Incident %s resolved in ServiceNow", incident_sys_id)
+        # Log the result
+        result = response.json().get("result", {})
+        new_state = result.get("state") if isinstance(result, dict) else None
+        if isinstance(new_state, dict):
+            new_state = new_state.get("value")
+        log.info(
+            "Resolve PATCH returned HTTP %s — new state: %s",
+            response.status_code, new_state,
+        )
+
+        # Step 3: Verify the state actually changed by re-reading the incident
+        verify_resp = await client.get(
+            f"/api/now/table/incident/{incident_sys_id}",
+            params={"sysparm_fields": "state,close_code,close_notes"},
+        )
+        if verify_resp.status_code < 400:
+            verify_data = verify_resp.json().get("result", {})
+            actual_state = verify_data.get("state", "")
+            if isinstance(actual_state, dict):
+                actual_state = actual_state.get("value", "")
+            log.info(
+                "Verification: incident %s state is now '%s' (expected '6')",
+                incident_sys_id, actual_state,
+            )
+            if actual_state != "6":
+                log.warning(
+                    "State did NOT change to 6 — SN may have business rules blocking resolution. "
+                    "Actual state: %s", actual_state,
+                )
+                return False
+
         return True
 
     except (ServiceNowAPIError, Exception) as exc:
