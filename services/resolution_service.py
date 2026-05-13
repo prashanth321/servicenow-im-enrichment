@@ -2,11 +2,13 @@
 Incident resolution service.
 
 Handles the two-phase resolution workflow:
-1. Accept a meeting transcript and generate an AI-style summary.
+1. Accept a meeting transcript and produce a structured summary
+   (template-based extraction — not LLM-powered).
 2. Build resolution artefacts (chronology, actions, problem ticket)
    and post to a knowledge base (Confluence stub).
 
-Converted from IncidentResolutionModal.tsx.
+Resolution records are persisted to disk via ``utils.persistence``
+and survive process restarts.
 """
 
 from __future__ import annotations
@@ -44,18 +46,23 @@ def generate_summary(
 ) -> ResolutionSummary:
     """Generate a resolution summary from a meeting transcript.
 
-    In production this would call an LLM API. The current implementation
-    extracts key information from the transcript and produces a structured
-    summary.
+    Uses template-based text extraction (not AI/LLM). Requires a
+    non-empty transcript to produce meaningful output.
 
     Args:
         incident_number: The incident being resolved.
-        transcript: Raw meeting transcript text.
+        transcript: Raw meeting transcript text (must not be empty).
         incident_context: Optional dict with incident metadata.
 
     Returns:
         A populated ResolutionSummary.
+
+    Raises:
+        ValueError: If transcript is empty or blank.
     """
+    if not transcript or not transcript.strip():
+        raise ValueError("A non-empty transcript is required to generate a resolution summary")
+
     ctx = incident_context or {}
     description = ctx.get("short_description", "Incident")
     problem_ticket = f"PRB{uuid.uuid4().hex[:7].upper()}"
@@ -93,22 +100,6 @@ def generate_summary(
                     "time": f"T+{i * 5} min",
                     "action": lines[i][:120] if i < total_lines else "Continued discussion",
                 })
-    else:
-        summary_text = (
-            f"Incident {incident_number} — {description}\n\n"
-            "Root cause was identified and a fix has been applied. "
-            "Services have been restored to normal operation."
-        )
-        root_cause_text = (
-            "A configuration change impacted service availability. "
-            "The change was rolled back and services recovered."
-        )
-        actions = [
-            {"time": "T+0 min", "action": "Incident declared, bridge opened"},
-            {"time": "T+5 min", "action": "Initial triage and impact assessment"},
-            {"time": "T+15 min", "action": "Root cause identified"},
-            {"time": "T+25 min", "action": "Fix applied, services recovering"},
-        ]
 
     summary = ResolutionSummary(
         summary=summary_text,

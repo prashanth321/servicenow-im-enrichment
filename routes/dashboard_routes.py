@@ -638,8 +638,9 @@ async def generate_resolution_summary(
     transcript: str = "",
     request: Request = None,
 ):
-    """Generate an AI-style resolution summary from a transcript.
+    """Generate a structured resolution summary from a transcript.
 
+    Uses template-based text extraction (not AI/LLM).
     Accepts transcript either as a query param or in the JSON body
     as {"transcript": "..."}.
     """
@@ -651,6 +652,10 @@ async def generate_resolution_summary(
                 transcript = body["transcript"]
         except Exception:
             pass
+
+    if not transcript or not transcript.strip():
+        raise HTTPException(status_code=400, detail="A non-empty transcript is required")
+
     return resolution_service.generate_summary(incident_number, transcript)
 
 
