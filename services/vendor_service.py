@@ -10,7 +10,7 @@ Converted from VendorPanel.tsx.
 
 from __future__ import annotations
 
-from models.dashboard_schemas import VendorInfo, VendorSLA, VendorSupportHours
+from models.dashboard_schemas import VendorInfo
 from utils.api_client import ServiceNowClient
 from utils.exceptions import ServiceNowAPIError
 from utils.logger import get_logger
@@ -32,29 +32,6 @@ def _save_store() -> None:
 _vendor_store: dict[str, VendorInfo] = _load_store()
 
 logger = get_logger(__name__)
-
-
-def _default_vendor() -> VendorInfo:
-    """Return a default vendor template (matching the React mock data)."""
-    return VendorInfo(
-        vendor_name="CloudTech Solutions",
-        account_manager="Sarah Chen",
-        support_email="support@cloudtech.example.com",
-        support_phone="+1 (555) 100-2000",
-        emergency_line="+1 (555) 100-9999",
-        support_hours=VendorSupportHours(
-            weekday="8:00 AM – 8:00 PM EST",
-            weekend="10:00 AM – 4:00 PM EST",
-            holiday="Emergency only",
-            emergency="24/7 via emergency line",
-        ),
-        sla_terms=[
-            VendorSLA(priority="P1", response_time="15 minutes", resolution_time="4 hours"),
-            VendorSLA(priority="P2", response_time="30 minutes", resolution_time="8 hours"),
-        ],
-        uptime_guarantee="99.95%",
-        contract_expiry="2027-03-31",
-    )
 
 
 def get_vendor_info(incident_number: str) -> VendorInfo | None:
@@ -125,12 +102,18 @@ async def lookup_vendor_for_incident(
 ) -> VendorInfo | None:
     """Resolve vendor info for an incident via CI or assignment group.
 
-    Tries, in order:
+    Returns cached data if already fetched for this incident.
+    Otherwise tries, in order:
     1. CI record's ``vendor`` / ``manufacturer`` reference.
     2. Assignment group's ``u_vendor`` / ``company`` reference.
 
     Returns ``None`` if neither lookup yields a vendor.
     """
+    # Return cached vendor if available (avoids re-fetching on every load)
+    cached = _vendor_store.get(incident_number)
+    if cached is not None:
+        return cached
+
     log = get_logger(__name__, incident_number)
 
     # -- 1. Try CI's vendor/manufacturer --
