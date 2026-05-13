@@ -16,9 +16,19 @@ from models.dashboard_schemas import PriorityChange
 from utils.api_client import ServiceNowClient
 from utils.exceptions import ServiceNowAPIError
 from utils.logger import get_logger
+from utils import persistence
 
-# In-memory store: incident_number -> list[PriorityChange]
-_priority_store: dict[str, list[PriorityChange]] = {}
+_STORE_NAME = "priority"
+
+def _load_store() -> dict[str, list[PriorityChange]]:
+    raw = persistence.load(_STORE_NAME)
+    return {k: [PriorityChange(**p) for p in v] for k, v in raw.items()}
+
+def _save_store() -> None:
+    persistence.save(_STORE_NAME, {k: [p.model_dump() for p in v] for k, v in _priority_store.items()})
+
+# Persistent store: incident_number -> list[PriorityChange]
+_priority_store: dict[str, list[PriorityChange]] = _load_store()
 
 logger = get_logger(__name__)
 
@@ -45,6 +55,7 @@ def add_priority_change(
         reason=reason,
     )
     _priority_store.setdefault(incident_number, []).append(change)
+    _save_store()
     logger.info(
         "Priority change on %s: P%s -> P%s by %s",
         incident_number,
@@ -103,6 +114,7 @@ async def fetch_priority_history_from_sn(
 
         # Cache the results
         _priority_store[incident_number] = changes
+        _save_store()
         log.info("Fetched %d priority changes from SN audit", len(changes))
         return changes
 

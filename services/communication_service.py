@@ -10,18 +10,30 @@ Converted from CommunicationPanel.tsx / CommunicationModal.
 
 from __future__ import annotations
 
+import asyncio
 import smtplib
 import uuid
 from datetime import datetime
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from functools import partial
 
 from config.settings import settings
 from models.dashboard_schemas import Communication, CommunicationCreate, CommunicationType
 from utils.logger import get_logger
+from utils import persistence
 
-# In-memory store: incident_number -> list[Communication]
-_comm_store: dict[str, list[Communication]] = {}
+_STORE_NAME = "communications"
+
+def _load_store() -> dict[str, list[Communication]]:
+    raw = persistence.load(_STORE_NAME)
+    return {k: [Communication(**c) for c in v] for k, v in raw.items()}
+
+def _save_store() -> None:
+    persistence.save(_STORE_NAME, {k: [c.model_dump() for c in v] for k, v in _comm_store.items()})
+
+# Persistent store: incident_number -> list[Communication]
+_comm_store: dict[str, list[Communication]] = _load_store()
 
 logger = get_logger(__name__)
 
@@ -100,7 +112,7 @@ def get_communications(incident_number: str) -> list[Communication]:
     return sorted(comms, key=lambda c: c.sent_at, reverse=True)
 
 
-def add_communication(
+async def add_communication(
     incident_number: str,
     payload: CommunicationCreate,
     sent_by: str = "System",
@@ -117,11 +129,15 @@ def add_communication(
         sent_by=sent_by,
     )
     _comm_store.setdefault(incident_number, []).append(comm)
+    _save_store()
 
-    # Send actual email if SMTP is configured and there are recipients
+    # Send actual email in a thread pool to avoid blocking the async loop
     if settings.smtp_host and payload.recipients:
         try:
-            _send_email(payload.subject, payload.body, payload.recipients)
+            loop = asyncio.get_running_loop()
+            await loop.run_in_executor(
+                None, partial(_send_email, payload.subject, payload.body, payload.recipients)
+            )
             logger.info(
                 "Email sent: %s [%s] to %s for %s",
                 comm.comm_type.value,

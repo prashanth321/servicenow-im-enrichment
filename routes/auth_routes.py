@@ -4,10 +4,10 @@ Authentication API routes — login, logout, and token validation.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, EmailStr
 
-from services.auth_service import generate_token, get_user_role, validate_credentials, verify_token
+from services.auth_service import generate_token, get_current_user, get_user_role, validate_credentials, verify_token
 from utils.logger import get_logger
 
 router = APIRouter(prefix="/api", tags=["auth"])
@@ -49,9 +49,6 @@ async def logout():
 
 
 @router.get("/verify")
-async def verify(token: str = ""):
-    """Verify a token is still valid."""
-    result = verify_token(token)
-    if not result:
-        raise HTTPException(status_code=401, detail="Invalid or expired token")
-    return {"valid": True, "email": result["email"], "role": result["role"]}
+async def verify(user: dict = Depends(get_current_user)):
+    """Verify the Bearer token is still valid."""
+    return {"valid": True, "email": user["email"], "role": user["role"]}

@@ -13,12 +13,13 @@ Both modes run concurrently using FastAPI lifespan events.
 from __future__ import annotations
 
 import asyncio
+import hmac
 from contextlib import asynccontextmanager
 
 from pathlib import Path
 
 import uvicorn
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -34,7 +35,7 @@ from services.cmdb_service import fetch_ci_details
 from services.impact_service import derive_business_impact
 from services.incident_service import fetch_incident, update_incident
 from services.oncall_service import fetch_oncall_details
-from utils.api_client import ServiceNowClient
+from utils.api_client import ServiceNowClient, sanitize_sysparm
 from utils.exceptions import CINotFoundError, OnCallFetchError, ServiceNowAPIError
 from utils.logger import get_logger
 
@@ -188,7 +189,10 @@ async def _polling_loop() -> None:
                         continue
                     poll_logger.info("Polling found %d candidate incident(s)", len(results))
 
-                    for record in results:
+                    # Bounded concurrency: process up to 5 incidents at once
+                    _sem = asyncio.Semaphore(5)
+
+                    async def _enrich_one(record: dict) -> None:
                         try:
                             def _val(field: object) -> str | None:
                                 if isinstance(field, dict):
@@ -205,12 +209,15 @@ async def _polling_loop() -> None:
                                 short_description=record.get("short_description", ""),
                                 assignment_group=_val(record.get("assignment_group")),
                             )
-                            await enrich_incident(payload)
+                            async with _sem:
+                                await enrich_incident(payload)
                         except Exception:
                             poll_logger.exception(
                                 "Unhandled error enriching incident %s",
                                 record.get("number", "UNKNOWN"),
                             )
+
+                    await asyncio.gather(*[_enrich_one(r) for r in results])
 
         except Exception:
             poll_logger.exception("Unhandled error in polling loop iteration")
@@ -268,23 +275,26 @@ from routes.dashboard_routes import router as dashboard_router  # noqa: E402
 from routes.dashboard_routes import _load_contacts  # noqa: E402
 app.include_router(dashboard_router)
 
+from services.auth_service import get_current_user  # noqa: E402
+
 
 @app.get("/contacts")
-def get_contacts():
+def get_contacts(_user: dict = Depends(get_current_user)):
     """Return the email contacts configuration."""
     return _load_contacts()
 
 
 @app.get("/users/search")
-async def search_servicenow_users(q: str = ""):
+async def search_servicenow_users(q: str = "", _user: dict = Depends(get_current_user)):
     """Search ServiceNow sys_user table by name (for handover autocomplete)."""
     if not q or len(q) < 2:
         return []
+    safe_q = sanitize_sysparm(q)
     async with ServiceNowClient() as client:
         resp = await client.get(
             "/api/now/table/sys_user",
             params={
-                "sysparm_query": f"nameLIKE{q}^active=true",
+                "sysparm_query": f"nameLIKE{safe_q}^active=true",
                 "sysparm_fields": "sys_id,name,email,title",
                 "sysparm_limit": "10",
             },
@@ -330,7 +340,7 @@ async def serve_major_incidents():
 
 
 @app.get("/incidents/list/active-p2")
-async def list_active_p2():
+async def list_active_p2(_user: dict = Depends(get_current_user)):
     """Return active P2 incidents for the dashboard selector dropdown."""
     async with ServiceNowClient() as client:
         response = await client.get(
@@ -354,26 +364,20 @@ async def webhook_handler(request: Request) -> JSONResponse:
     """Receive a ServiceNow incident event and trigger enrichment.
 
     The endpoint accepts the JSON payload sent by a ServiceNow Business Rule
-    or outbound REST Message. Only incidents with ``priority == "2"`` (P2)
-    are processed; all others are acknowledged and skipped.
-
-    **Sample inbound payload:**
-
-    .. code-block:: json
-
-        {
-            "sys_id": "a1b2c3d4e5f6...",
-            "number": "INC0012345",
-            "priority": "2",
-            "cmdb_ci": "abc123def456...",
-            "short_description": "Payment gateway timeout",
-            "assignment_group": "xyz789..."
-        }
-
-    Returns:
-        JSON with ``status`` and ``message`` fields.
+    or outbound REST Message.  Requires ``X-Webhook-Secret`` header matching
+    the configured ``WEBHOOK_SECRET`` env var.  Only incidents with
+    ``priority == "2"`` (P2) are processed; all others are acknowledged and
+    skipped.
     """
     wh_logger = get_logger(__name__, "WEBHOOK")
+
+    # Verify webhook shared secret
+    if settings.webhook_secret:
+        provided = request.headers.get("X-Webhook-Secret", "")
+        if not hmac.compare_digest(provided, settings.webhook_secret):
+            wh_logger.warning("Webhook rejected — invalid or missing X-Webhook-Secret")
+            raise HTTPException(status_code=403, detail="Invalid webhook secret")
+
 
     try:
         body: dict = await request.json()

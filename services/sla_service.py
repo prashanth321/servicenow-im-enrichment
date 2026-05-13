@@ -15,9 +15,19 @@ from datetime import datetime
 
 from models.dashboard_schemas import SLAClock, SLAClockCreate, SLAStatus
 from utils.logger import get_logger
+from utils import persistence
 
-# In-memory store: incident_number -> list[SLAClock]
-_sla_store: dict[str, list[SLAClock]] = {}
+_STORE_NAME = "sla_clocks"
+
+def _load_store() -> dict[str, list[SLAClock]]:
+    raw = persistence.load(_STORE_NAME)
+    return {k: [SLAClock(**c) for c in v] for k, v in raw.items()}
+
+def _save_store() -> None:
+    persistence.save(_STORE_NAME, {k: [c.model_dump() for c in v] for k, v in _sla_store.items()})
+
+# Persistent store: incident_number -> list[SLAClock]
+_sla_store: dict[str, list[SLAClock]] = _load_store()
 
 logger = get_logger(__name__)
 
@@ -46,6 +56,7 @@ def get_clocks(incident_number: str) -> list[SLAClock]:
     """Return all SLA clocks for an incident, creating defaults if none exist."""
     if incident_number not in _sla_store:
         _sla_store[incident_number] = _default_clocks(incident_number)
+        _save_store()
     return _sla_store[incident_number]
 
 
@@ -60,6 +71,7 @@ def add_clock(incident_number: str, payload: SLAClockCreate) -> SLAClock:
     )
     clocks = get_clocks(incident_number)
     clocks.append(clock)
+    _save_store()
     logger.info("SLA clock added: %s for %s", clock.label, incident_number)
     return clock
 
@@ -73,6 +85,7 @@ def update_clock_status(
     for clock in get_clocks(incident_number):
         if clock.id == clock_id:
             clock.status = new_status
+            _save_store()
             logger.info(
                 "SLA clock %s (%s) -> %s",
                 clock.label,
@@ -89,6 +102,7 @@ def delete_clock(incident_number: str, clock_id: str) -> bool:
     for i, clock in enumerate(clocks):
         if clock.id == clock_id:
             clocks.pop(i)
+            _save_store()
             logger.info("SLA clock deleted: %s from %s", clock_id, incident_number)
             return True
     return False

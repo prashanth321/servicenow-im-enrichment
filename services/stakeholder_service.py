@@ -13,9 +13,19 @@ import uuid
 
 from models.dashboard_schemas import Stakeholder, StakeholderCreate
 from utils.logger import get_logger
+from utils import persistence
 
-# In-memory store: incident_number -> list[Stakeholder]
-_stakeholder_store: dict[str, list[Stakeholder]] = {}
+_STORE_NAME = "stakeholders"
+
+def _load_store() -> dict[str, list[Stakeholder]]:
+    raw = persistence.load(_STORE_NAME)
+    return {k: [Stakeholder(**s) for s in v] for k, v in raw.items()}
+
+def _save_store() -> None:
+    persistence.save(_STORE_NAME, {k: [s.model_dump() for s in v] for k, v in _stakeholder_store.items()})
+
+# Persistent store: incident_number -> list[Stakeholder]
+_stakeholder_store: dict[str, list[Stakeholder]] = _load_store()
 
 logger = get_logger(__name__)
 
@@ -36,6 +46,7 @@ def add_stakeholder(incident_number: str, payload: StakeholderCreate) -> Stakeho
         phone=payload.phone,
     )
     _stakeholder_store.setdefault(incident_number, []).append(stakeholder)
+    _save_store()
     logger.info("Stakeholder added: %s (%s) to %s", stakeholder.name, stakeholder.role, incident_number)
     return stakeholder
 
@@ -46,6 +57,7 @@ def remove_stakeholder(incident_number: str, stakeholder_id: str) -> bool:
     for i, s in enumerate(stakeholders):
         if s.id == stakeholder_id:
             stakeholders.pop(i)
+            _save_store()
             logger.info("Stakeholder removed: %s from %s", stakeholder_id, incident_number)
             return True
     return False

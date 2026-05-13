@@ -15,6 +15,8 @@ import time
 from typing import Optional
 
 import bcrypt
+from fastapi import Depends, HTTPException, Request
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from config.settings import settings
 from utils.logger import get_logger
@@ -107,3 +109,25 @@ def verify_token(token: str) -> Optional[dict]:
         return {"email": data.get("email"), "role": data.get("role", "readonly")}
     except Exception:
         return None
+
+
+# ---------------------------------------------------------------------------
+# FastAPI dependency — extracts & validates the Bearer token
+# ---------------------------------------------------------------------------
+
+_bearer_scheme = HTTPBearer(auto_error=False)
+
+
+async def get_current_user(
+    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
+) -> dict:
+    """FastAPI dependency that extracts and verifies the Bearer token.
+
+    Returns ``{"email": ..., "role": ...}`` on success, raises 401 otherwise.
+    """
+    if credentials is None or not credentials.credentials:
+        raise HTTPException(status_code=401, detail="Missing authentication token")
+    user = verify_token(credentials.credentials)
+    if user is None:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+    return user

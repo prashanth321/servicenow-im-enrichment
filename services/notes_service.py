@@ -23,11 +23,37 @@ from models.dashboard_schemas import (
     NoteCreate,
 )
 from utils.logger import get_logger
+from utils import persistence
 
-# In-memory stores keyed by incident_number
-_notes_store: dict[str, list[Note]] = {}
-_actions_store: dict[str, list[ActionItem]] = {}
-_changes_store: dict[str, list[InfraChange]] = {}
+_NOTES_STORE = "notes"
+_ACTIONS_STORE = "actions"
+_CHANGES_STORE = "changes"
+
+def _load_notes() -> dict[str, list[Note]]:
+    raw = persistence.load(_NOTES_STORE)
+    return {k: [Note(**n) for n in v] for k, v in raw.items()}
+
+def _load_actions() -> dict[str, list[ActionItem]]:
+    raw = persistence.load(_ACTIONS_STORE)
+    return {k: [ActionItem(**a) for a in v] for k, v in raw.items()}
+
+def _load_changes() -> dict[str, list[InfraChange]]:
+    raw = persistence.load(_CHANGES_STORE)
+    return {k: [InfraChange(**c) for c in v] for k, v in raw.items()}
+
+def _save_notes():
+    persistence.save(_NOTES_STORE, {k: [n.model_dump() for n in v] for k, v in _notes_store.items()})
+
+def _save_actions():
+    persistence.save(_ACTIONS_STORE, {k: [a.model_dump() for a in v] for k, v in _actions_store.items()})
+
+def _save_changes():
+    persistence.save(_CHANGES_STORE, {k: [c.model_dump() for c in v] for k, v in _changes_store.items()})
+
+# Persistent stores keyed by incident_number
+_notes_store: dict[str, list[Note]] = _load_notes()
+_actions_store: dict[str, list[ActionItem]] = _load_actions()
+_changes_store: dict[str, list[InfraChange]] = _load_changes()
 
 logger = get_logger(__name__)
 
@@ -52,6 +78,7 @@ def add_note(incident_number: str, payload: NoteCreate) -> Note:
         created_at=datetime.utcnow(),
     )
     _notes_store.setdefault(incident_number, []).append(note)
+    _save_notes()
     logger.info("Note added to %s by %s", incident_number, note.author)
     return note
 
@@ -62,6 +89,7 @@ def delete_note(incident_number: str, note_id: str) -> bool:
     for i, n in enumerate(notes):
         if n.id == note_id:
             notes.pop(i)
+            _save_notes()
             return True
     return False
 
@@ -88,6 +116,7 @@ def add_action_item(incident_number: str, payload: ActionItemCreate) -> ActionIt
         created_at=datetime.utcnow(),
     )
     _actions_store.setdefault(incident_number, []).append(item)
+    _save_actions()
     logger.info("Action item added to %s: %s", incident_number, item.description[:50])
     return item
 
@@ -106,6 +135,7 @@ def update_action_item(
                 item.assignee = payload.assignee
             if payload.due_date is not None:
                 item.due_date = payload.due_date
+            _save_actions()
             logger.info("Action item %s updated on %s", item_id, incident_number)
             return item
     return None
@@ -117,6 +147,7 @@ def delete_action_item(incident_number: str, item_id: str) -> bool:
     for i, item in enumerate(items):
         if item.id == item_id:
             items.pop(i)
+            _save_actions()
             return True
     return False
 
@@ -141,6 +172,7 @@ def add_change(incident_number: str, payload: InfraChangeCreate) -> InfraChange:
         timestamp=datetime.utcnow(),
     )
     _changes_store.setdefault(incident_number, []).append(change)
+    _save_changes()
     logger.info("Infra change recorded on %s: %s", incident_number, change.description[:50])
     return change
 
@@ -151,5 +183,6 @@ def delete_change(incident_number: str, change_id: str) -> bool:
     for i, c in enumerate(changes):
         if c.id == change_id:
             changes.pop(i)
+            _save_changes()
             return True
     return False

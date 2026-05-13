@@ -13,6 +13,9 @@ build/
 .venv.venv/
 venv/
 
+# Persisted dashboard state
+data/
+
 # IDE
 .vscode/
 .idea/

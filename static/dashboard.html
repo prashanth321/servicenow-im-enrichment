@@ -448,11 +448,16 @@ let dashboardData = null;
 let slaInterval = null;
 
 // ── Helpers ──
+function authHeaders() {
+    const token = localStorage.getItem('im_auth_token');
+    return token ? { 'Authorization': 'Bearer ' + token } : {};
+}
 async function api(path, opts = {}) {
     const res = await fetch(API + path, {
-        headers: { 'Content-Type': 'application/json', ...opts.headers },
+        headers: { 'Content-Type': 'application/json', ...authHeaders(), ...opts.headers },
         ...opts,
     });
+    if (res.status === 401) { handleLogout(); return; }
     if (!res.ok && res.status !== 204) {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.detail || res.statusText);

@@ -14,12 +14,24 @@ from datetime import datetime
 
 from models.dashboard_schemas import HandoverChecklist, HandoverRecord, HandoverRequest
 from utils.logger import get_logger
+from utils import persistence
 
-# In-memory store: incident_number -> list[HandoverRecord]
-_handover_store: dict[str, list[HandoverRecord]] = {}
+_HANDOVER_STORE = "handovers"
+_OWNER_STORE = "owners"
 
-# Current owner per incident
-_owner_store: dict[str, str] = {}
+def _load_handovers() -> dict[str, list[HandoverRecord]]:
+    raw = persistence.load(_HANDOVER_STORE)
+    return {k: [HandoverRecord(**r) for r in v] for k, v in raw.items()}
+
+def _save_handovers() -> None:
+    persistence.save(_HANDOVER_STORE, {k: [r.model_dump() for r in v] for k, v in _handover_store.items()})
+
+def _save_owners() -> None:
+    persistence.save(_OWNER_STORE, _owner_store)
+
+# Persistent stores
+_handover_store: dict[str, list[HandoverRecord]] = _load_handovers()
+_owner_store: dict[str, str] = persistence.load(_OWNER_STORE)
 
 logger = get_logger(__name__)
 
@@ -33,6 +45,7 @@ def set_initial_owner(incident_number: str, owner: str) -> None:
     """Set the initial owner when an incident is first loaded."""
     if incident_number not in _owner_store:
         _owner_store[incident_number] = owner
+        _save_owners()
 
 
 def get_handover_history(incident_number: str) -> list[HandoverRecord]:
@@ -97,6 +110,8 @@ def transfer_ownership(
 
     _handover_store.setdefault(incident_number, []).append(record)
     _owner_store[incident_number] = request.target_manager
+    _save_handovers()
+    _save_owners()
 
     logger.info(
         "Ownership transferred on %s: %s -> %s",

@@ -344,8 +344,13 @@ let refreshInterval = null;
 let countdownInterval = null;
 
 // ── API Helper ──
+function authHeaders() {
+    const token = localStorage.getItem('im_auth_token');
+    return token ? { 'Authorization': 'Bearer ' + token } : {};
+}
 async function api(path) {
-    const res = await fetch(API + path);
+    const res = await fetch(API + path, { headers: authHeaders() });
+    if (res.status === 401) { handleLogout(); return; }
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return res.json();
 }

@@ -14,9 +14,19 @@ from models.dashboard_schemas import VendorInfo, VendorSLA, VendorSupportHours
 from utils.api_client import ServiceNowClient
 from utils.exceptions import ServiceNowAPIError
 from utils.logger import get_logger
+from utils import persistence
 
-# In-memory store: incident_number -> VendorInfo
-_vendor_store: dict[str, VendorInfo] = {}
+_STORE_NAME = "vendors"
+
+def _load_store() -> dict[str, VendorInfo]:
+    raw = persistence.load(_STORE_NAME)
+    return {k: VendorInfo(**v) for k, v in raw.items()}
+
+def _save_store() -> None:
+    persistence.save(_STORE_NAME, {k: v.model_dump() for k, v in _vendor_store.items()})
+
+# Persistent store: incident_number -> VendorInfo
+_vendor_store: dict[str, VendorInfo] = _load_store()
 
 logger = get_logger(__name__)
 
@@ -52,6 +62,7 @@ def get_vendor_info(incident_number: str) -> VendorInfo | None:
 def set_vendor_info(incident_number: str, vendor: VendorInfo) -> VendorInfo:
     """Set or update vendor info for an incident."""
     _vendor_store[incident_number] = vendor
+    _save_store()
     logger.info("Vendor info updated for %s: %s", incident_number, vendor.vendor_name)
     return vendor
 

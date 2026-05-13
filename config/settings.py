@@ -49,6 +49,9 @@ class Settings(BaseSettings):
     # CORS allowed origin for the dashboard
     cors_origin: str = "http://localhost:3000"
 
+    # Shared secret for webhook authentication
+    webhook_secret: str = ""
+
     model_config = {
         "env_file": str(_ENV_FILE),
         "env_file_encoding": "utf-8",

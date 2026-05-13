@@ -18,9 +18,19 @@ from models.dashboard_schemas import ResolutionRequest, ResolutionSummary
 from utils.api_client import ServiceNowClient
 from utils.exceptions import ServiceNowAPIError
 from utils.logger import get_logger
+from utils import persistence
 
-# In-memory store: incident_number -> ResolutionSummary
-_resolution_store: dict[str, ResolutionSummary] = {}
+_STORE_NAME = "resolutions"
+
+def _load_store() -> dict[str, ResolutionSummary]:
+    raw = persistence.load(_STORE_NAME)
+    return {k: ResolutionSummary(**v) for k, v in raw.items()}
+
+def _save_store() -> None:
+    persistence.save(_STORE_NAME, {k: v.model_dump() for k, v in _resolution_store.items()})
+
+# Persistent store: incident_number -> ResolutionSummary
+_resolution_store: dict[str, ResolutionSummary] = _load_store()
 
 logger = get_logger(__name__)
 
@@ -118,6 +128,7 @@ def generate_summary(
     )
 
     _resolution_store[incident_number] = summary
+    _save_store()
     logger.info("Resolution summary generated for %s (problem: %s)", incident_number, problem_ticket)
     return summary
 

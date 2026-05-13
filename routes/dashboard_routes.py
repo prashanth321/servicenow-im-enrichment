@@ -22,7 +22,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from models.dashboard_schemas import (
     ActionItemCreate,
@@ -53,10 +53,15 @@ from services import (
 )
 from services.incident_service import fetch_incident
 from services.oncall_service import fetch_oncall_details
-from utils.api_client import ServiceNowClient
+from services.auth_service import get_current_user
+from utils.api_client import ServiceNowClient, sanitize_sysparm
 from utils.logger import get_logger
 
-router = APIRouter(prefix="/incidents", tags=["dashboard"])
+router = APIRouter(
+    prefix="/incidents",
+    tags=["dashboard"],
+    dependencies=[Depends(get_current_user)],
+)
 logger = get_logger(__name__)
 
 _CONTACTS_FILE = Path(__file__).resolve().parent.parent / "config" / "contacts.json"
@@ -76,11 +81,12 @@ def _load_contacts() -> dict:
 
 async def _get_incident_detail(incident_number: str) -> IncidentDetail:
     """Fetch full incident record from SN and map to IncidentDetail."""
+    safe_number = sanitize_sysparm(incident_number)
     async with ServiceNowClient() as client:
         response = await client.get(
             "/api/now/table/incident",
             params={
-                "sysparm_query": f"number={incident_number}",
+                "sysparm_query": f"number={safe_number}",
                 "sysparm_fields": (
                     "sys_id,number,priority,state,short_description,description,"
                     "cmdb_ci,service_offering,assignment_group,assigned_to,"
@@ -253,9 +259,9 @@ def list_communications(incident_number: str):
 
 
 @router.post("/{incident_number}/comms", status_code=201)
-def send_communication(incident_number: str, payload: CommunicationCreate):
+async def send_communication(incident_number: str, payload: CommunicationCreate):
     """Record and send a communication."""
-    return communication_service.add_communication(incident_number, payload)
+    return await communication_service.add_communication(incident_number, payload)
 
 
 @router.get("/{incident_number}/comms/template")
@@ -590,7 +596,7 @@ def get_handover_info(incident_number: str):
 async def transfer_ownership(incident_number: str, payload: HandoverRequest):
     """Execute a shift handover (requires complete checklist and valid SN user)."""
     # Validate user exists in ServiceNow
-    target = payload.target_manager.strip()
+    target = sanitize_sysparm(payload.target_manager.strip())
     if not target:
         raise HTTPException(status_code=400, detail="Target manager name is required")
 

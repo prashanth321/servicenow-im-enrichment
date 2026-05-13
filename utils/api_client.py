@@ -25,6 +25,17 @@ from utils.logger import get_logger
 logger = get_logger(__name__)
 
 
+def sanitize_sysparm(value: str) -> str:
+    """Strip characters that could inject additional SYSPARM filter clauses.
+
+    ServiceNow uses ``^`` as a logical AND separator in encoded queries.
+    Allowing user input to contain ``^`` lets an attacker append extra
+    filter conditions.  This function removes ``^`` and ``\\n`` from the
+    value so it can be safely embedded in a sysparm_query.
+    """
+    return value.replace("^", "").replace("\n", "").replace("\r", "")
+
+
 def _is_retryable_response(response: httpx.Response) -> bool:
     """Return True when the HTTP status code warrants a retry."""
     return response.status_code in {429, 500, 503}
@@ -93,13 +104,15 @@ class ServiceNowClient:
         response = await self._client.get(path, params=params)
         return response
 
-    @_retry_decorator
     async def patch(
         self,
         path: str,
         json_body: dict,
     ) -> httpx.Response:
         """Send a PATCH request to the ServiceNow REST API.
+
+        Mutations are **not** retried to avoid duplicate side-effects
+        (e.g. duplicate work_notes or re-triggering business rules).
 
         Args:
             path: API path relative to the instance base URL.
