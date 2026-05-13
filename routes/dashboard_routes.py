@@ -45,6 +45,7 @@ from models.dashboard_schemas import (
 from services import (
     communication_service,
     handover_service,
+    incident_detail_service,
     notes_service,
     priority_service,
     resolution_service,
@@ -54,7 +55,7 @@ from services import (
 )
 from services.incident_service import fetch_incident
 from services.oncall_service import fetch_oncall_details
-from services.auth_service import get_current_user
+from services.auth_service import get_current_user, require_write_access
 from utils.api_client import ServiceNowClient, sanitize_sysparm
 from utils.logger import get_logger
 from utils.sn_fields import extract_display, extract_value
@@ -78,50 +79,15 @@ def _load_contacts() -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Helper: fetch incident detail from ServiceNow
+# Helper: fetch incident detail from ServiceNow (delegates to service layer)
 # ---------------------------------------------------------------------------
 
 async def _get_incident_detail(incident_number: str) -> IncidentDetail:
     """Fetch full incident record from SN and map to IncidentDetail."""
-    safe_number = sanitize_sysparm(incident_number)
-    async with ServiceNowClient() as client:
-        response = await client.get(
-            "/api/now/table/incident",
-            params={
-                "sysparm_query": f"number={safe_number}",
-                "sysparm_fields": (
-                    "sys_id,number,priority,state,short_description,description,"
-                    "cmdb_ci,service_offering,assignment_group,assigned_to,"
-                    "opened_at,opened_by,u_major_incident_manager,business_impact,"
-                    "sys_created_on"
-                ),
-                "sysparm_display_value": "all",
-                "sysparm_limit": "1",
-            },
-        )
-        results = response.json().get("result", [])
-        if not results:
-            raise HTTPException(status_code=404, detail=f"Incident {incident_number} not found")
-
-        r = results[0]
-
-        return IncidentDetail(
-            sys_id=extract_value(r.get("sys_id")) or "",
-            number=extract_display(r.get("number")) or incident_number,
-            priority=extract_value(r.get("priority")) or "4",
-            state=_map_state(extract_value(r.get("state"))),
-            short_description=extract_display(r.get("short_description")) or "",
-            description=extract_display(r.get("description")) or "",
-            cmdb_ci=extract_value(r.get("cmdb_ci")),
-            ci_name=extract_display(r.get("cmdb_ci")),
-            service_offering=extract_display(r.get("service_offering")),
-            assignment_group=extract_display(r.get("assignment_group")),
-            assigned_to=extract_display(r.get("assigned_to")),
-            opened_at=extract_display(r.get("opened_at")) or extract_display(r.get("sys_created_on")),
-            opened_by=extract_display(r.get("opened_by")),
-            major_incident_manager=extract_display(r.get("u_major_incident_manager")),
-            business_impact=extract_display(r.get("business_impact")),
-        )
+    result = await incident_detail_service.fetch_incident_detail(incident_number)
+    if not result:
+        raise HTTPException(status_code=404, detail=f"Incident {incident_number} not found")
+    return result
 
 
 def _map_state(sn_state: str | None) -> str:
@@ -135,36 +101,8 @@ def _map_state(sn_state: str | None) -> str:
 # ---------------------------------------------------------------------------
 
 async def _auto_sync_to_servicenow(incident_number: str, latest_entry: str = "") -> None:
-    """Automatically sync the latest dashboard update to ServiceNow work_notes.
-
-    Called after any mutation (add/update/delete) to action items, notes, or changes.
-    Only sends the latest change, not all accumulated data.
-    Failures are logged but do not block the response.
-    """
-
-    try:
-        incident = await _get_incident_detail(incident_number)
-
-        lines: list[str] = ["=== IM Dashboard Update ==="]
-        lines.append(f"Incident: {incident_number}")
-        lines.append(f"Updated at: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')} UTC")
-        lines.append("")
-
-        if latest_entry:
-            lines.append(latest_entry)
-            lines.append("")
-
-        lines.append("=== End Update ===")
-        work_notes = "\n".join(lines)
-
-        async with ServiceNowClient() as client:
-            await client.patch(
-                f"/api/now/table/incident/{incident.sys_id}",
-                json_body={"work_notes": work_notes},
-            )
-        logger.info("Auto-synced latest update to incident %s", incident_number)
-    except Exception:
-        logger.warning("Auto-sync failed for %s (non-blocking)", incident_number, exc_info=True)
+    """Automatically sync the latest dashboard update to ServiceNow work_notes."""
+    await incident_detail_service.sync_update_to_servicenow(incident_number, latest_entry)
 
 
 # ---------------------------------------------------------------------------
@@ -188,13 +126,13 @@ def list_sla_clocks(incident_number: str):
 
 
 @router.post("/{incident_number}/sla", status_code=201)
-def create_sla_clock(incident_number: str, payload: SLAClockCreate):
+def create_sla_clock(incident_number: str, payload: SLAClockCreate, _user: dict = Depends(require_write_access)):
     """Add a new SLA clock."""
     return sla_service.add_clock(incident_number, payload)
 
 
 @router.patch("/{incident_number}/sla/{clock_id}")
-def update_sla_clock(incident_number: str, clock_id: str, status: SLAStatus):
+def update_sla_clock(incident_number: str, clock_id: str, status: SLAStatus, _user: dict = Depends(require_write_access)):
     """Pause, resume, or stop a clock."""
     clock = sla_service.update_clock_status(incident_number, clock_id, status)
     if not clock:
@@ -203,14 +141,14 @@ def update_sla_clock(incident_number: str, clock_id: str, status: SLAStatus):
 
 
 @router.delete("/{incident_number}/sla/{clock_id}", status_code=204)
-def delete_sla_clock(incident_number: str, clock_id: str):
+def delete_sla_clock(incident_number: str, clock_id: str, _user: dict = Depends(require_write_access)):
     """Delete an SLA clock."""
     if not sla_service.delete_clock(incident_number, clock_id):
         raise HTTPException(status_code=404, detail="Clock not found")
 
 
 @router.post("/{incident_number}/sla/tick")
-def tick_sla_clocks(incident_number: str, seconds: int = 1):
+def tick_sla_clocks(incident_number: str, seconds: int = 1, _user: dict = Depends(require_write_access)):
     """Advance all running clocks by N seconds. Used for real-time sync."""
     return sla_service.tick_clocks(incident_number, seconds)
 
@@ -226,13 +164,13 @@ def list_stakeholders(incident_number: str):
 
 
 @router.post("/{incident_number}/stakeholders", status_code=201)
-def add_stakeholder(incident_number: str, payload: StakeholderCreate):
+def add_stakeholder(incident_number: str, payload: StakeholderCreate, _user: dict = Depends(require_write_access)):
     """Add a stakeholder to an incident."""
     return stakeholder_service.add_stakeholder(incident_number, payload)
 
 
 @router.delete("/{incident_number}/stakeholders/{stakeholder_id}", status_code=204)
-def remove_stakeholder(incident_number: str, stakeholder_id: str):
+def remove_stakeholder(incident_number: str, stakeholder_id: str, _user: dict = Depends(require_write_access)):
     """Remove a stakeholder."""
     if not stakeholder_service.remove_stakeholder(incident_number, stakeholder_id):
         raise HTTPException(status_code=404, detail="Stakeholder not found")
@@ -249,7 +187,7 @@ def list_communications(incident_number: str):
 
 
 @router.post("/{incident_number}/comms", status_code=201)
-async def send_communication(incident_number: str, payload: CommunicationCreate):
+async def send_communication(incident_number: str, payload: CommunicationCreate, _user: dict = Depends(require_write_access)):
     """Record and send a communication."""
     return await communication_service.add_communication(incident_number, payload)
 
@@ -332,7 +270,7 @@ async def get_servicenow_notes(incident_number: str):
 
 
 @router.post("/{incident_number}/notes", status_code=201)
-async def add_note(incident_number: str, payload: NoteCreate):
+async def add_note(incident_number: str, payload: NoteCreate, _user: dict = Depends(require_write_access)):
     """Add a note and sync to ServiceNow."""
     note = notes_service.add_note(incident_number, payload)
     await _auto_sync_to_servicenow(incident_number, f"[Note Added] {payload.author or 'Unknown'}: {payload.content}")
@@ -340,7 +278,7 @@ async def add_note(incident_number: str, payload: NoteCreate):
 
 
 @router.delete("/{incident_number}/notes/{note_id}", status_code=204)
-async def delete_note(incident_number: str, note_id: str):
+async def delete_note(incident_number: str, note_id: str, _user: dict = Depends(require_write_access)):
     """Delete a note and sync to ServiceNow."""
     if not notes_service.delete_note(incident_number, note_id):
         raise HTTPException(status_code=404, detail="Note not found")
@@ -358,7 +296,7 @@ def list_action_items(incident_number: str):
 
 
 @router.post("/{incident_number}/actions", status_code=201)
-async def add_action_item(incident_number: str, payload: ActionItemCreate):
+async def add_action_item(incident_number: str, payload: ActionItemCreate, _user: dict = Depends(require_write_access)):
     """Create an action item and sync to ServiceNow."""
     item = notes_service.add_action_item(incident_number, payload)
     await _auto_sync_to_servicenow(incident_number, f"[Action Added] {payload.description} | Team: {payload.team or 'N/A'} | Assignee: {payload.assignee or 'Unassigned'}")
@@ -366,7 +304,7 @@ async def add_action_item(incident_number: str, payload: ActionItemCreate):
 
 
 @router.patch("/{incident_number}/actions/{item_id}")
-async def update_action_item(incident_number: str, item_id: str, payload: ActionItemUpdate):
+async def update_action_item(incident_number: str, item_id: str, payload: ActionItemUpdate, _user: dict = Depends(require_write_access)):
     """Update an action item (status, assignee, due date) and sync to ServiceNow."""
     item = notes_service.update_action_item(incident_number, item_id, payload)
     if not item:
@@ -376,7 +314,7 @@ async def update_action_item(incident_number: str, item_id: str, payload: Action
 
 
 @router.delete("/{incident_number}/actions/{item_id}", status_code=204)
-async def delete_action_item(incident_number: str, item_id: str):
+async def delete_action_item(incident_number: str, item_id: str, _user: dict = Depends(require_write_access)):
     """Delete an action item and sync to ServiceNow."""
     if not notes_service.delete_action_item(incident_number, item_id):
         raise HTTPException(status_code=404, detail="Action item not found")
@@ -452,7 +390,7 @@ async def list_scheduled_changes(incident_number: str):
 
 
 @router.post("/{incident_number}/changes", status_code=201)
-async def add_change(incident_number: str, payload: InfraChangeCreate):
+async def add_change(incident_number: str, payload: InfraChangeCreate, _user: dict = Depends(require_write_access)):
     """Record an infrastructure change and sync to ServiceNow."""
     change = notes_service.add_change(incident_number, payload)
     await _auto_sync_to_servicenow(incident_number, f"[Change Recorded] {payload.description} | Owner: {payload.owner_team or 'N/A'}")
@@ -460,7 +398,7 @@ async def add_change(incident_number: str, payload: InfraChangeCreate):
 
 
 @router.delete("/{incident_number}/changes/{change_id}", status_code=204)
-async def delete_change(incident_number: str, change_id: str):
+async def delete_change(incident_number: str, change_id: str, _user: dict = Depends(require_write_access)):
     """Delete an infrastructure change record and sync to ServiceNow."""
     if not notes_service.delete_change(incident_number, change_id):
         raise HTTPException(status_code=404, detail="Change not found")
@@ -511,7 +449,7 @@ async def get_vendor(incident_number: str):
 
 
 @router.put("/{incident_number}/vendor")
-def update_vendor(incident_number: str, payload: VendorInfo):
+def update_vendor(incident_number: str, payload: VendorInfo, _user: dict = Depends(require_write_access)):
     """Set or update vendor info."""
     return vendor_service.set_vendor_info(incident_number, payload)
 
@@ -543,6 +481,7 @@ def add_priority_change(
     to_priority: str,
     changed_by: str = "",
     reason: str = "",
+    _user: dict = Depends(require_write_access),
 ):
     """Record a manual priority change."""
     return priority_service.add_priority_change(
@@ -564,7 +503,7 @@ def get_handover_info(incident_number: str):
 
 
 @router.post("/{incident_number}/handover")
-async def transfer_ownership(incident_number: str, payload: HandoverRequest):
+async def transfer_ownership(incident_number: str, payload: HandoverRequest, _user: dict = Depends(require_write_access)):
     """Execute a shift handover (requires complete checklist and valid SN user)."""
     # Validate user exists in ServiceNow
     target = sanitize_sysparm(payload.target_manager.strip())
@@ -637,6 +576,7 @@ async def generate_resolution_summary(
     incident_number: str,
     transcript: str = "",
     request: Request = None,
+    _user: dict = Depends(require_write_access),
 ):
     """Generate a structured resolution summary from a transcript.
 
@@ -660,7 +600,7 @@ async def generate_resolution_summary(
 
 
 @router.post("/{incident_number}/resolution/publish")
-def publish_to_confluence(incident_number: str):
+def publish_to_confluence(incident_number: str, _user: dict = Depends(require_write_access)):
     """Post the resolution summary to Confluence."""
     url = resolution_service.post_to_confluence(incident_number)
     if not url:
@@ -669,7 +609,7 @@ def publish_to_confluence(incident_number: str):
 
 
 @router.post("/{incident_number}/resolve")
-async def resolve_incident(incident_number: str, payload: ResolutionRequest):
+async def resolve_incident(incident_number: str, payload: ResolutionRequest, _user: dict = Depends(require_write_access)):
     """Resolve the incident in ServiceNow."""
     if not payload.resolution_notes or not payload.resolution_notes.strip():
         raise HTTPException(status_code=400, detail="Resolution notes are required")
@@ -726,7 +666,7 @@ async def resolve_incident(incident_number: str, payload: ResolutionRequest):
 # ---------------------------------------------------------------------------
 
 @router.post("/{incident_number}/sync")
-async def sync_actions_to_servicenow(incident_number: str):
+async def sync_actions_to_servicenow(incident_number: str, _user: dict = Depends(require_write_access)):
     """Push all dashboard actions, notes, and changes to the incident work_notes.
 
     Builds a formatted work_notes entry from the current dashboard state

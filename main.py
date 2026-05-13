@@ -40,6 +40,16 @@ from services.incident_service import fetch_incident, update_incident
 from services.oncall_service import fetch_oncall_details
 from utils.correlation import CorrelationIDMiddleware
 from utils.api_client import ServiceNowClient, sanitize_sysparm
+from utils.enrichment_tracker import (
+    EnrichmentStep,
+    acquire_processing,
+    complete_enrichment,
+    is_in_progress,
+    is_recently_enriched,
+    record_step,
+    release_processing,
+    start_enrichment,
+)
 from utils.exceptions import CINotFoundError, OnCallFetchError, ServiceNowAPIError
 from utils.logger import get_logger
 from utils.sn_fields import extract_value
@@ -51,101 +61,141 @@ logger = get_logger(__name__)
 # Core enrichment orchestration
 # ---------------------------------------------------------------------------
 
-async def enrich_incident(payload: WebhookPayload) -> EnrichedIncident:
+async def enrich_incident(payload: WebhookPayload, triggered_by: str = "poll") -> EnrichedIncident:
     """Run the full enrichment pipeline for a single incident.
 
-    Steps:
-        1. Fetch CI/CMDB data (skip gracefully if CI missing).
-        2. Fetch on-call details for the CI's support group.
-        3. Fetch business application metadata.
-        4. Derive business impact from tier + criticality.
-        5. Write the enriched data back to the incident.
+    Includes idempotency guard (skips if recently enriched), processing lock
+    (prevents concurrent processing), parallel independent lookups, and
+    a full audit trail of every step.
 
     Args:
         payload: The inbound incident data (from webhook or polling).
+        triggered_by: Source that triggered enrichment ("poll" or "webhook").
 
     Returns:
         The ``EnrichedIncident`` with all available enrichment applied.
+
+    Raises:
+        RuntimeError: If enrichment is skipped due to idempotency or lock.
     """
     inc_logger = get_logger(__name__, payload.number)
+
+    # --- Idempotency guard ---
+    if is_recently_enriched(payload.number, window_seconds=settings.polling_interval_seconds):
+        inc_logger.info("Skipping %s — already enriched within the polling window", payload.number)
+        raise RuntimeError(f"Incident {payload.number} already enriched recently")
+
+    # --- Processing lock (prevents webhook + poll race condition) ---
+    acquired = await acquire_processing(payload.number)
+    if not acquired:
+        inc_logger.info("Skipping %s — already being processed", payload.number)
+        raise RuntimeError(f"Incident {payload.number} is already being processed")
+
+    # Start audit record
+    audit = start_enrichment(payload.number, payload.sys_id, triggered_by)
     enrichment_status = "complete"
 
     ci_details: CIDetails | None = None
     oncall_details = None
     app_details = None
 
-    async with ServiceNowClient() as client:
+    try:
+        async with ServiceNowClient() as client:
 
-        # --- Step 1: CMDB / CI lookup ---
-        if payload.cmdb_ci:
-            try:
-                ci_details = await fetch_ci_details(client, payload.cmdb_ci, payload.number)
-                inc_logger.info("CI details fetched successfully")
-            except CINotFoundError:
-                inc_logger.warning("CI %s not found — continuing with partial enrichment", payload.cmdb_ci)
+            # --- Step 1: CMDB / CI lookup ---
+            if payload.cmdb_ci:
+                try:
+                    ci_details = await fetch_ci_details(client, payload.cmdb_ci, payload.number)
+                    inc_logger.info("CI details fetched successfully")
+                    record_step(audit, EnrichmentStep.CI_LOOKUP, "success")
+                except CINotFoundError:
+                    inc_logger.warning("CI %s not found — continuing with partial enrichment", payload.cmdb_ci)
+                    enrichment_status = "partial"
+                    record_step(audit, EnrichmentStep.CI_LOOKUP, "failed", f"CI {payload.cmdb_ci} not found")
+                except ServiceNowAPIError as exc:
+                    inc_logger.error("CMDB fetch failed: %s", exc)
+                    enrichment_status = "partial"
+                    record_step(audit, EnrichmentStep.CI_LOOKUP, "failed", str(exc))
+            else:
+                inc_logger.warning("No CMDB CI linked to incident — skipping CI enrichment")
                 enrichment_status = "partial"
-            except ServiceNowAPIError as exc:
-                inc_logger.error("CMDB fetch failed: %s", exc)
+                record_step(audit, EnrichmentStep.CI_LOOKUP, "skipped", "No CMDB CI linked")
+
+            # --- Steps 2 & 3 in parallel: On-call + App lookup ---
+            support_group = (
+                (ci_details.support_group if ci_details else None)
+                or payload.assignment_group
+            )
+            app_sys_id = ci_details.business_application if ci_details else None
+
+            async def _fetch_oncall():
+                nonlocal oncall_details, enrichment_status
+                if support_group:
+                    try:
+                        oncall_details = await fetch_oncall_details(client, support_group, payload.number)
+                        inc_logger.info("On-call details fetched successfully")
+                        record_step(audit, EnrichmentStep.ONCALL_LOOKUP, "success")
+                    except (OnCallFetchError, ServiceNowAPIError) as exc:
+                        inc_logger.error("On-call fetch failed: %s", exc)
+                        enrichment_status = "partial"
+                        record_step(audit, EnrichmentStep.ONCALL_LOOKUP, "failed", str(exc))
+                else:
+                    inc_logger.warning("No support group available — skipping on-call lookup")
+                    record_step(audit, EnrichmentStep.ONCALL_LOOKUP, "skipped", "No support group")
+
+            async def _fetch_app():
+                nonlocal app_details, enrichment_status
+                if app_sys_id:
+                    try:
+                        app_details = await fetch_app_details(client, app_sys_id, payload.number)
+                        inc_logger.info("Business app details fetched successfully")
+                        record_step(audit, EnrichmentStep.APP_LOOKUP, "success")
+                    except ServiceNowAPIError as exc:
+                        inc_logger.error("App details fetch failed: %s", exc)
+                        enrichment_status = "partial"
+                        record_step(audit, EnrichmentStep.APP_LOOKUP, "failed", str(exc))
+                else:
+                    inc_logger.warning("No business application linked — skipping app lookup")
+                    record_step(audit, EnrichmentStep.APP_LOOKUP, "skipped", "No business app linked")
+
+            # Run on-call and app lookups concurrently
+            await asyncio.gather(_fetch_oncall(), _fetch_app())
+
+            # --- Step 4: Derive business impact ---
+            service_tier = ci_details.service_mapping if ci_details else None
+            criticality = None
+            business_impact = derive_business_impact(service_tier, criticality)
+            inc_logger.info("Business impact derived: %s", business_impact)
+            record_step(audit, EnrichmentStep.IMPACT_DERIVATION, "success", f"impact={business_impact}")
+
+            # --- Step 5: Assemble enriched incident ---
+            enriched = EnrichedIncident(
+                sys_id=payload.sys_id,
+                number=payload.number,
+                short_description=payload.short_description,
+                ci_details=ci_details,
+                oncall_details=oncall_details,
+                app_details=app_details,
+                business_impact=business_impact,
+                enrichment_status=enrichment_status,
+            )
+
+            # --- Step 6: Write enriched data back to ServiceNow ---
+            success = await update_incident(client, enriched)
+            if not success:
+                inc_logger.error("Failed to update incident %s with enrichment data", payload.number)
+                record_step(audit, EnrichmentStep.SN_UPDATE, "failed", "update_incident returned False")
                 enrichment_status = "partial"
-        else:
-            inc_logger.warning("No CMDB CI linked to incident — skipping CI enrichment")
-            enrichment_status = "partial"
+            else:
+                inc_logger.info("Incident %s enrichment complete (status=%s)", payload.number, enrichment_status)
+                record_step(audit, EnrichmentStep.SN_UPDATE, "success")
 
-        # --- Step 2: On-call lookup ---
-        support_group = (
-            (ci_details.support_group if ci_details else None)
-            or payload.assignment_group
-        )
-        if support_group:
-            try:
-                oncall_details = await fetch_oncall_details(client, support_group, payload.number)
-                inc_logger.info("On-call details fetched successfully")
-            except (OnCallFetchError, ServiceNowAPIError) as exc:
-                inc_logger.error("On-call fetch failed: %s", exc)
-                enrichment_status = "partial"
-        else:
-            inc_logger.warning("No support group available — skipping on-call lookup")
+        # Finalize audit
+        complete_enrichment(audit, enrichment_status)
+        return enriched
 
-        # --- Step 3: Business application lookup ---
-        app_sys_id = ci_details.business_application if ci_details else None
-        if app_sys_id:
-            try:
-                app_details = await fetch_app_details(client, app_sys_id, payload.number)
-                inc_logger.info("Business app details fetched successfully")
-            except ServiceNowAPIError as exc:
-                inc_logger.error("App details fetch failed: %s", exc)
-                enrichment_status = "partial"
-        else:
-            inc_logger.warning("No business application linked — skipping app lookup")
-
-        # --- Step 4: Derive business impact ---
-        # Use service_mapping as a proxy for tier; support_group criticality
-        # would come from the CI record in a real deployment.
-        service_tier = ci_details.service_mapping if ci_details else None
-        criticality = None  # Could be enriched from additional CMDB fields
-        business_impact = derive_business_impact(service_tier, criticality)
-        inc_logger.info("Business impact derived: %s", business_impact)
-
-        # --- Step 5: Assemble enriched incident ---
-        enriched = EnrichedIncident(
-            sys_id=payload.sys_id,
-            number=payload.number,
-            short_description=payload.short_description,
-            ci_details=ci_details,
-            oncall_details=oncall_details,
-            app_details=app_details,
-            business_impact=business_impact,
-            enrichment_status=enrichment_status,
-        )
-
-        # --- Step 6: Write enriched data back to ServiceNow ---
-        success = await update_incident(client, enriched)
-        if not success:
-            inc_logger.error("Failed to update incident %s with enrichment data", payload.number)
-        else:
-            inc_logger.info("Incident %s enrichment complete (status=%s)", payload.number, enrichment_status)
-
-    return enriched
+    finally:
+        release_processing(payload.number)
 
 
 # ---------------------------------------------------------------------------
@@ -198,21 +248,33 @@ async def _polling_loop() -> None:
                     _sem = asyncio.Semaphore(5)
 
                     async def _enrich_one(record: dict) -> None:
+                        inc_number = record.get("number", "UNKNOWN")
                         try:
+                            # Skip if recently enriched (idempotency guard)
+                            if is_recently_enriched(inc_number, settings.polling_interval_seconds):
+                                poll_logger.debug("Skipping %s — recently enriched", inc_number)
+                                return
+                            # Skip if already in progress (race guard)
+                            if is_in_progress(inc_number):
+                                poll_logger.debug("Skipping %s — already in progress", inc_number)
+                                return
+
                             payload = WebhookPayload(
                                 sys_id=record.get("sys_id", ""),
-                                number=record.get("number", "UNKNOWN"),
+                                number=inc_number,
                                 priority=str(record.get("priority", "")),
                                 cmdb_ci=extract_value(record.get("cmdb_ci")),
                                 short_description=record.get("short_description", ""),
                                 assignment_group=extract_value(record.get("assignment_group")),
                             )
                             async with _sem:
-                                await enrich_incident(payload)
+                                await enrich_incident(payload, triggered_by="poll")
+                        except RuntimeError:
+                            # Idempotency/lock skip — already logged inside enrich_incident
+                            pass
                         except Exception:
                             poll_logger.exception(
-                                "Unhandled error enriching incident %s",
-                                record.get("number", "UNKNOWN"),
+                                "Unhandled error enriching incident %s", inc_number,
                             )
 
                     await asyncio.gather(*[_enrich_one(r) for r in results])
@@ -408,12 +470,15 @@ async def webhook_handler(request: Request) -> JSONResponse:
     """
     wh_logger = get_logger(__name__, "WEBHOOK")
 
-    # Verify webhook shared secret
-    if settings.webhook_secret:
-        provided = request.headers.get("X-Webhook-Secret", "")
-        if not hmac.compare_digest(provided, settings.webhook_secret):
-            wh_logger.warning("Webhook rejected — invalid or missing X-Webhook-Secret")
-            raise HTTPException(status_code=403, detail="Invalid webhook secret")
+    # Verify webhook shared secret — MANDATORY
+    if not settings.webhook_secret:
+        wh_logger.error("Webhook rejected — WEBHOOK_SECRET not configured on server")
+        raise HTTPException(status_code=503, detail="Webhook authentication not configured")
+
+    provided = request.headers.get("X-Webhook-Secret", "")
+    if not hmac.compare_digest(provided, settings.webhook_secret):
+        wh_logger.warning("Webhook rejected — invalid or missing X-Webhook-Secret")
+        raise HTTPException(status_code=403, detail="Invalid webhook secret")
 
 
     try:
@@ -444,7 +509,7 @@ async def webhook_handler(request: Request) -> JSONResponse:
 
     # Run enrichment asynchronously (don't block the webhook response for too long)
     try:
-        enriched = await enrich_incident(payload)
+        enriched = await enrich_incident(payload, triggered_by="webhook")
         return JSONResponse(
             status_code=200,
             content={
@@ -453,6 +518,13 @@ async def webhook_handler(request: Request) -> JSONResponse:
                 "enrichment_status": enriched.enrichment_status,
                 "business_impact": enriched.business_impact,
             },
+        )
+    except RuntimeError as exc:
+        # Idempotency guard or processing lock prevented enrichment
+        wh_logger.info("Enrichment skipped for %s: %s", payload.number, exc)
+        return JSONResponse(
+            status_code=200,
+            content={"status": "skipped", "message": str(exc)},
         )
     except Exception:
         wh_logger.exception("Enrichment failed for %s", payload.number)
@@ -486,6 +558,23 @@ async def health_check() -> dict:
             status_code=503,
             content={"status": "degraded", "servicenow": str(exc)},
         )
+
+
+# ---------------------------------------------------------------------------
+# Enrichment audit trail
+# ---------------------------------------------------------------------------
+
+from utils.enrichment_tracker import get_audit_trail  # noqa: E402
+
+
+@app.get("/enrichment/audit/{incident_number}")
+async def get_enrichment_audit(incident_number: str, _user: dict = Depends(get_current_user)):
+    """Return the enrichment audit trail for an incident.
+
+    Shows what was enriched, when, which steps succeeded/failed, and
+    whether the trigger was a webhook or polling cycle.
+    """
+    return get_audit_trail(incident_number)
 
 
 # ---------------------------------------------------------------------------

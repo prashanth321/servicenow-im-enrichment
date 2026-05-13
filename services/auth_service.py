@@ -146,3 +146,26 @@ async def get_current_user(
     if user is None:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
     return user
+
+
+# ---------------------------------------------------------------------------
+# Role-based authorization dependencies
+# ---------------------------------------------------------------------------
+
+# Roles with write access (can create/update/delete dashboard data)
+_WRITE_ROLES = {"admin", "manager", "incident_manager"}
+
+
+def require_write_access(user: dict = Depends(get_current_user)) -> dict:
+    """FastAPI dependency that enforces write (mutating) access.
+
+    Only users with admin, manager, or incident_manager roles can
+    create, update, or delete dashboard records. Readonly users are blocked.
+    """
+    role = user.get("role", "readonly")
+    if role not in _WRITE_ROLES:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Role '{role}' does not have write access",
+        )
+    return user
