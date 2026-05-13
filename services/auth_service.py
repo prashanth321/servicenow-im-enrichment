@@ -21,8 +21,12 @@ from utils.logger import get_logger
 
 log = get_logger(__name__)
 
-# Secret key derived from the SN password (in production, use a dedicated secret)
-_SECRET = hashlib.sha256(settings.sn_password.encode()).hexdigest()
+# Dedicated JWT secret from environment; falls back to a derived value if not set
+if settings.jwt_secret:
+    _SECRET = settings.jwt_secret
+else:
+    log.warning("JWT_SECRET not set — falling back to derived secret. Set JWT_SECRET in .env for production.")
+    _SECRET = hashlib.sha256(settings.sn_password.encode()).hexdigest()
 
 # Token validity: 8 hours
 _TOKEN_EXPIRY_SECONDS = 8 * 3600

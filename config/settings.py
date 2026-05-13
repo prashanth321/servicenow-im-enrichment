@@ -43,6 +43,12 @@ class Settings(BaseSettings):
     # Dashboard user accounts: pipe-separated entries of email:bcrypt_hash:role
     auth_users: str = ""
 
+    # Dedicated JWT signing secret (do NOT reuse SN credentials)
+    jwt_secret: str = ""
+
+    # CORS allowed origin for the dashboard
+    cors_origin: str = "http://localhost:3000"
+
     model_config = {
         "env_file": str(_ENV_FILE),
         "env_file_encoding": "utf-8",

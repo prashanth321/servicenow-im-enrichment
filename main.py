@@ -246,10 +246,10 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS — allow the React dashboard frontend to call the API
+# CORS — allow the dashboard frontend to call the API
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[settings.cors_origin],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
