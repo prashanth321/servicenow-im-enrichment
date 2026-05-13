@@ -119,8 +119,8 @@ async def _get_incident_detail(incident_number: str) -> IncidentDetail:
             assigned_to=extract_display(r.get("assigned_to")),
             opened_at=extract_display(r.get("opened_at")) or extract_display(r.get("sys_created_on")),
             opened_by=extract_display(r.get("opened_by")),
-            major_incident_manager=_dv(r.get("u_major_incident_manager")),
-            business_impact=_dv(r.get("business_impact")),
+            major_incident_manager=extract_display(r.get("u_major_incident_manager")),
+            business_impact=extract_display(r.get("business_impact")),
         )
 
 

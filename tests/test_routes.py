@@ -264,7 +264,7 @@ class TestCookieAuth:
         # Verify httponly flag in Set-Cookie header
         set_cookie = resp.headers.get("set-cookie", "")
         assert "httponly" in set_cookie.lower()
-        assert "samesite=strict" in set_cookie.lower()
+        assert "samesite=lax" in set_cookie.lower()
 
     def test_verify_works_with_cookie(self, client):
         # Login to get the cookie

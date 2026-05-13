@@ -58,7 +58,7 @@ async def login(request: Request, payload: LoginRequest):
         value=token,
         httponly=True,
         secure=False,  # Set True when served over HTTPS
-        samesite="strict",
+        samesite="lax",
         max_age=_COOKIE_MAX_AGE,
         path="/",
     )

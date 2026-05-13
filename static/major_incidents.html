@@ -336,10 +336,6 @@ let userRole = 'readonly';
         return;
     }
     userRole = localStorage.getItem('im_user_role') || 'readonly';
-    // Verify cookie token is still valid server-side
-    fetch('/api/verify', { credentials: 'same-origin' }).then(r => {
-        if (!r.ok) handleLogout();
-    }).catch(() => {});
 })();
 
 function handleLogout() {
