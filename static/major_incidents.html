@@ -319,19 +319,31 @@
 </div>
 
 <script>
+// ── HTML Escaping ──
+function escapeHtml(str) {
+    if (!str) return '';
+    const div = document.createElement('div');
+    div.appendChild(document.createTextNode(String(str)));
+    return div.innerHTML;
+}
+
 // ── Auth Guard ──
 let userRole = 'readonly';
 (function checkAuth() {
-    const token = localStorage.getItem('im_auth_token');
-    if (!token) {
+    const email = localStorage.getItem('im_user_email');
+    if (!email) {
         window.location.href = '/login';
         return;
     }
     userRole = localStorage.getItem('im_user_role') || 'readonly';
+    // Verify cookie token is still valid server-side
+    fetch('/api/verify', { credentials: 'same-origin' }).then(r => {
+        if (!r.ok) handleLogout();
+    }).catch(() => {});
 })();
 
 function handleLogout() {
-    localStorage.removeItem('im_auth_token');
+    fetch('/api/logout', { method: 'POST', credentials: 'same-origin' });
     localStorage.removeItem('im_user_email');
     localStorage.removeItem('im_user_role');
     window.location.href = '/login';
@@ -344,12 +356,8 @@ let refreshInterval = null;
 let countdownInterval = null;
 
 // ── API Helper ──
-function authHeaders() {
-    const token = localStorage.getItem('im_auth_token');
-    return token ? { 'Authorization': 'Bearer ' + token } : {};
-}
 async function api(path) {
-    const res = await fetch(API + path, { headers: authHeaders() });
+    const res = await fetch(API + path, { credentials: 'same-origin' });
     if (res.status === 401) { handleLogout(); return; }
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return res.json();
@@ -451,12 +459,6 @@ async function loadIncidents(status) {
             </div>
         `;
     }
-}
-
-function escapeHtml(str) {
-    const div = document.createElement('div');
-    div.textContent = str || '';
-    return div.innerHTML;
 }
 
 // ── Tabs ──
@@ -805,7 +807,7 @@ async function showIncidentNotesPopup(incidentId, title) {
         html += '</div>'; // close .modal-body
         contentEl.innerHTML = html;
     } catch (e) {
-        document.getElementById('modalNotesContent').innerHTML = `<div style="text-align:center;padding:40px;color:#ef4444"><p>Failed to load details: ${e.message}</p></div>`;
+        document.getElementById('modalNotesContent').innerHTML = `<div style="text-align:center;padding:40px;color:#ef4444"><p>Failed to load details: ${escapeHtml(e.message)}</p></div>`;
     }
 }
 

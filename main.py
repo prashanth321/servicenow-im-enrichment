@@ -265,6 +265,36 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+# Content Security Policy middleware
+from starlette.middleware.base import BaseHTTPMiddleware  # noqa: E402
+
+
+class CSPMiddleware(BaseHTTPMiddleware):
+    """Inject Content-Security-Policy headers on every response."""
+
+    _CSP = "; ".join([
+        "default-src 'self'",
+        "script-src 'self' https://cdn.tailwindcss.com https://unpkg.com 'unsafe-inline'",
+        "style-src 'self' https://fonts.googleapis.com 'unsafe-inline'",
+        "font-src 'self' https://fonts.gstatic.com",
+        "img-src 'self' data:",
+        "connect-src 'self'",
+        "frame-ancestors 'none'",
+        "base-uri 'self'",
+        "form-action 'self'",
+    ])
+
+    async def dispatch(self, request, call_next):
+        response = await call_next(request)
+        response.headers["Content-Security-Policy"] = self._CSP
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        return response
+
+
+app.add_middleware(CSPMiddleware)
+
 # Per-request correlation ID
 app.add_middleware(CorrelationIDMiddleware)
 

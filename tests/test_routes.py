@@ -12,12 +12,12 @@ def client():
 
 
 def _get_token(client) -> str:
-    """Helper: login and return a valid Bearer token."""
+    """Helper: login and return a valid Bearer token from the httpOnly cookie."""
     resp = client.post("/api/login", json={
         "email": "admin@servicenow.com",
         "password": "admin123",
     })
-    return resp.json()["token"]
+    return resp.cookies.get("im_auth_token")
 
 
 def _auth(token: str) -> dict:
@@ -35,9 +35,11 @@ class TestLoginEndpoint:
         })
         assert resp.status_code == 200
         data = resp.json()
-        assert "token" in data
         assert data["email"] == "admin@servicenow.com"
         assert data["role"] == "admin"
+        # Token is in httpOnly cookie, NOT in response body
+        assert "token" not in data
+        assert "im_auth_token" in resp.cookies
 
     def test_login_wrong_password(self, client):
         resp = client.post("/api/login", json={
@@ -230,3 +232,59 @@ class TestCorrelationID:
         custom_id = "test-correlation-123"
         resp = client.post("/api/logout", headers={"X-Request-ID": custom_id})
         assert resp.headers.get("x-request-id") == custom_id
+
+
+# ── Content Security Policy ──────────────────────────────────────────
+
+class TestCSPHeaders:
+    def test_csp_header_present(self, client):
+        resp = client.get("/login")
+        csp = resp.headers.get("content-security-policy", "")
+        assert "default-src 'self'" in csp
+        assert "frame-ancestors 'none'" in csp
+
+    def test_x_frame_options_deny(self, client):
+        resp = client.get("/login")
+        assert resp.headers.get("x-frame-options") == "DENY"
+
+    def test_x_content_type_options(self, client):
+        resp = client.get("/login")
+        assert resp.headers.get("x-content-type-options") == "nosniff"
+
+
+# ── Cookie-based auth ────────────────────────────────────────────────
+
+class TestCookieAuth:
+    def test_login_sets_httponly_cookie(self, client):
+        resp = client.post("/api/login", json={
+            "email": "admin@servicenow.com",
+            "password": "admin123",
+        })
+        assert "im_auth_token" in resp.cookies
+        # Verify httponly flag in Set-Cookie header
+        set_cookie = resp.headers.get("set-cookie", "")
+        assert "httponly" in set_cookie.lower()
+        assert "samesite=strict" in set_cookie.lower()
+
+    def test_verify_works_with_cookie(self, client):
+        # Login to get the cookie
+        login_resp = client.post("/api/login", json={
+            "email": "admin@servicenow.com",
+            "password": "admin123",
+        })
+        # TestClient automatically sends cookies on subsequent requests
+        resp = client.get("/api/verify")
+        assert resp.status_code == 200
+        assert resp.json()["valid"] is True
+
+    def test_logout_clears_cookie(self, client):
+        # Login first
+        client.post("/api/login", json={
+            "email": "admin@servicenow.com",
+            "password": "admin123",
+        })
+        resp = client.post("/api/logout")
+        assert resp.status_code == 200
+        # Cookie should be cleared (max-age=0 or expired)
+        set_cookie = resp.headers.get("set-cookie", "")
+        assert "im_auth_token" in set_cookie

@@ -112,22 +112,37 @@ def verify_token(token: str) -> Optional[dict]:
 
 
 # ---------------------------------------------------------------------------
-# FastAPI dependency — extracts & validates the Bearer token
+# FastAPI dependency — extracts & validates the Bearer token or cookie
 # ---------------------------------------------------------------------------
 
 _bearer_scheme = HTTPBearer(auto_error=False)
+_COOKIE_NAME = "im_auth_token"
 
 
 async def get_current_user(
+    request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
 ) -> dict:
-    """FastAPI dependency that extracts and verifies the Bearer token.
+    """FastAPI dependency that extracts and verifies the auth token.
+
+    Checks (in order):
+        1. Authorization: Bearer <token> header
+        2. im_auth_token httpOnly cookie
 
     Returns ``{"email": ..., "role": ...}`` on success, raises 401 otherwise.
     """
-    if credentials is None or not credentials.credentials:
+    token: str | None = None
+
+    # Prefer Authorization header (for programmatic clients)
+    if credentials and credentials.credentials:
+        token = credentials.credentials
+    else:
+        # Fall back to httpOnly cookie (browser sessions)
+        token = request.cookies.get(_COOKIE_NAME)
+
+    if not token:
         raise HTTPException(status_code=401, detail="Missing authentication token")
-    user = verify_token(credentials.credentials)
+    user = verify_token(token)
     if user is None:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
     return user

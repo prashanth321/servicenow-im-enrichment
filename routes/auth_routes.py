@@ -5,6 +5,7 @@ Authentication API routes — login, logout, and token validation.
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, EmailStr
 from slowapi import Limiter
 from slowapi.util import get_remote_address
@@ -16,6 +17,10 @@ router = APIRouter(prefix="/api", tags=["auth"])
 logger = get_logger(__name__)
 _limiter = Limiter(key_func=get_remote_address)
 
+# Cookie configuration
+_COOKIE_NAME = "im_auth_token"
+_COOKIE_MAX_AGE = 8 * 3600  # Match token expiry
+
 
 class LoginRequest(BaseModel):
     email: str
@@ -23,7 +28,6 @@ class LoginRequest(BaseModel):
 
 
 class LoginResponse(BaseModel):
-    token: str
     email: str
     role: str
     message: str
@@ -32,7 +36,7 @@ class LoginResponse(BaseModel):
 @router.post("/login", response_model=LoginResponse)
 @_limiter.limit("10/minute")
 async def login(request: Request, payload: LoginRequest):
-    """Authenticate user and return a session token."""
+    """Authenticate user and return a session token via httpOnly cookie."""
     if not payload.email or not payload.password:
         raise HTTPException(status_code=400, detail="Email and password are required")
 
@@ -43,16 +47,33 @@ async def login(request: Request, payload: LoginRequest):
     token = generate_token(payload.email)
     role = get_user_role(payload.email)
     logger.info("User %s logged in successfully (role=%s)", payload.email, role)
-    return LoginResponse(token=token, email=payload.email, role=role, message="Login successful")
+
+    response = JSONResponse(content={
+        "email": payload.email,
+        "role": role,
+        "message": "Login successful",
+    })
+    response.set_cookie(
+        key=_COOKIE_NAME,
+        value=token,
+        httponly=True,
+        secure=False,  # Set True when served over HTTPS
+        samesite="strict",
+        max_age=_COOKIE_MAX_AGE,
+        path="/",
+    )
+    return response
 
 
 @router.post("/logout")
 async def logout():
-    """Logout endpoint — client should remove the token."""
-    return {"message": "Logged out successfully"}
+    """Logout endpoint — clear the auth cookie."""
+    response = JSONResponse(content={"message": "Logged out successfully"})
+    response.delete_cookie(key=_COOKIE_NAME, path="/")
+    return response
 
 
 @router.get("/verify")
 async def verify(user: dict = Depends(get_current_user)):
-    """Verify the Bearer token is still valid."""
+    """Verify the auth token (cookie or Bearer) is still valid."""
     return {"valid": True, "email": user["email"], "role": user["role"]}

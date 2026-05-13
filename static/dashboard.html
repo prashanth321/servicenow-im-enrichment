@@ -417,26 +417,37 @@
 </div>
 
 <script>
+// ── HTML Escaping ──
+function escapeHtml(str) {
+    if (!str) return '';
+    const div = document.createElement('div');
+    div.appendChild(document.createTextNode(String(str)));
+    return div.innerHTML;
+}
+
 // ── Auth Guard ──
 let userRole = 'readonly';
 (function checkAuth() {
-    const token = localStorage.getItem('im_auth_token');
-    if (!token) {
+    const email = localStorage.getItem('im_user_email');
+    if (!email) {
         window.location.href = '/login';
         return;
     }
     userRole = localStorage.getItem('im_user_role') || 'readonly';
-    const email = localStorage.getItem('im_user_email') || '';
     const emailEl = document.getElementById('userEmail');
     if (emailEl) emailEl.textContent = email;
     // Hide edit controls for readonly users
     if (userRole === 'readonly') {
         document.querySelectorAll('.admin-only').forEach(el => el.style.display = 'none');
     }
+    // Verify cookie token is still valid server-side
+    fetch('/api/verify', { credentials: 'same-origin' }).then(r => {
+        if (!r.ok) handleLogout();
+    }).catch(() => {});
 })();
 
 function handleLogout() {
-    localStorage.removeItem('im_auth_token');
+    fetch('/api/logout', { method: 'POST', credentials: 'same-origin' });
     localStorage.removeItem('im_user_email');
     localStorage.removeItem('im_user_role');
     window.location.href = '/login';
@@ -448,13 +459,10 @@ let dashboardData = null;
 let slaInterval = null;
 
 // ── Helpers ──
-function authHeaders() {
-    const token = localStorage.getItem('im_auth_token');
-    return token ? { 'Authorization': 'Bearer ' + token } : {};
-}
 async function api(path, opts = {}) {
     const res = await fetch(API + path, {
-        headers: { 'Content-Type': 'application/json', ...authHeaders(), ...opts.headers },
+        headers: { 'Content-Type': 'application/json', ...opts.headers },
+        credentials: 'same-origin',
         ...opts,
     });
     if (res.status === 401) { handleLogout(); return; }
@@ -588,22 +596,22 @@ function renderHeader(inc) {
                 ${stateBadge(inc.state)}
             </div>
             <div class="text-sm text-slate-600">
-                ${inc.assignment_group ? `<span class="mr-3">👥 ${inc.assignment_group}</span>` : ''}
-                ${inc.assigned_to ? `<span>👤 ${inc.assigned_to}</span>` : ''}
+                ${inc.assignment_group ? `<span class="mr-3">👥 ${escapeHtml(inc.assignment_group)}</span>` : ''}
+                ${inc.assigned_to ? `<span>👤 ${escapeHtml(inc.assigned_to)}</span>` : ''}
             </div>
         </div>
-        <p class="text-sm mt-1">${inc.short_description}</p>
-        ${inc.description ? `<p class="text-xs text-slate-600 mt-1">${inc.description}</p>` : ''}
+        <p class="text-sm mt-1">${escapeHtml(inc.short_description)}</p>
+        ${inc.description ? `<p class="text-xs text-slate-600 mt-1">${escapeHtml(inc.description)}</p>` : ''}
         <div class="flex flex-wrap items-center gap-2 mt-2">
-            ${inc.service_offering ? `<span class="badge badge-blue">Service Offering: ${inc.service_offering}</span>` : ''}
-            ${inc.ci_name ? `<span class="badge badge-blue">CI: ${inc.ci_name}</span>` : ''}
-            ${inc.business_impact ? `<span class="badge ${inc.business_impact === 'Low' ? 'badge-green' : inc.business_impact === 'Medium' ? 'badge-amber' : 'badge-red'}">Impact: ${inc.business_impact}</span>` : ''}
+            ${inc.service_offering ? `<span class="badge badge-blue">Service Offering: ${escapeHtml(inc.service_offering)}</span>` : ''}
+            ${inc.ci_name ? `<span class="badge badge-blue">CI: ${escapeHtml(inc.ci_name)}</span>` : ''}
+            ${inc.business_impact ? `<span class="badge ${inc.business_impact === 'Low' ? 'badge-green' : inc.business_impact === 'Medium' ? 'badge-amber' : 'badge-red'}">Impact: ${escapeHtml(inc.business_impact)}</span>` : ''}
         </div>
     `;
     document.getElementById('headerInfo').innerHTML = `
-        <span class="text-slate-600">${inc.assigned_to ? 'Assigned: ' + inc.assigned_to : 'Unassigned'}</span>
+        <span class="text-slate-600">${inc.assigned_to ? 'Assigned: ' + escapeHtml(inc.assigned_to) : 'Unassigned'}</span>
         <span class="text-green-400 text-xs" title="Changes auto-sync to ServiceNow">● Auto-Sync</span>
-        <span id="userEmail" class="text-slate-600">${localStorage.getItem('im_user_email') || ''}</span>
+        <span id="userEmail" class="text-slate-600">${escapeHtml(localStorage.getItem('im_user_email') || '')}</span>
         <button class="btn btn-ghost btn-sm" onclick="handleLogout()">⏻ Logout</button>
     `;
 }
@@ -620,7 +628,7 @@ function renderSLAClocks(clocks) {
         return `
             <div class="p-2 rounded-lg bg-[#f1f5f9] ${breached ? 'pulse' : ''}">
                 <div class="flex items-center justify-between mb-1">
-                    <span class="text-xs font-medium">${c.label}</span>
+                    <span class="text-xs font-medium">${escapeHtml(c.label)}</span>
                     <span class="text-xs font-mono ${breached ? 'text-red-400' : 'text-slate-700'}" id="sla-time-${c.id}">${fmtSeconds(c.remaining_seconds)}</span>
                 </div>
                 <div class="sla-bar">
@@ -687,9 +695,9 @@ function renderStakeholders(list) {
     el.innerHTML = list.map(s => `
         <div class="flex items-center justify-between p-2 rounded bg-[#f1f5f9]">
             <div>
-                <div class="text-sm font-medium">${s.name}</div>
-                <div class="text-xs text-slate-600">${s.role}${s.team ? ' · ' + s.team : ''}</div>
-                ${s.email ? `<div class="text-xs text-slate-500">${s.email}</div>` : ''}
+                <div class="text-sm font-medium">${escapeHtml(s.name)}</div>
+                <div class="text-xs text-slate-600">${escapeHtml(s.role)}${s.team ? ' · ' + escapeHtml(s.team) : ''}</div>
+                ${s.email ? `<div class="text-xs text-slate-500">${escapeHtml(s.email)}</div>` : ''}
             </div>
             <div class="flex items-center gap-1">
                 ${s.email ? `
@@ -732,7 +740,7 @@ function renderTeamsStakeholders(list) {
     if (!el) return;
     if (!list || !list.length) { el.innerHTML = ''; return; }
     el.innerHTML = '<span class="text-xs text-slate-500 mr-1">Quick add:</span>' + list.filter(s => s.email).map(s => `
-        <button class="badge badge-blue cursor-pointer hover:opacity-80" onclick="addTeamsParticipantByEmail('${s.email}', '${s.name}')" title="Add ${s.name}">${s.name}</button>
+        <button class="badge badge-blue cursor-pointer hover:opacity-80" onclick="addTeamsParticipantByEmail('${s.email}', '${escapeHtml(s.name)}')" title="Add ${escapeHtml(s.name)}">${escapeHtml(s.name)}</button>
     `).join('');
 }
 
@@ -768,8 +776,8 @@ function renderTeamsParticipantList() {
     el.innerHTML = teamsParticipants.map(p => `
         <div class="flex items-center justify-between p-2 rounded bg-[#f1f5f9]">
             <div>
-                <span class="text-sm font-medium">${p.name}</span>
-                ${p.name !== p.email ? `<span class="text-xs text-slate-500 ml-1">${p.email}</span>` : ''}
+                <span class="text-sm font-medium">${escapeHtml(p.name)}</span>
+                ${p.name !== p.email ? `<span class="text-xs text-slate-500 ml-1">${escapeHtml(p.email)}</span>` : ''}
             </div>
             <button class="text-xs text-slate-500 hover:text-red-400" onclick="removeTeamsParticipant('${p.email}')">✕</button>
         </div>
@@ -807,10 +815,10 @@ function renderComms(list) {
     el.innerHTML = list.map(c => `
         <div class="p-2 rounded bg-[#f1f5f9]">
             <div class="flex items-center justify-between">
-                <span class="text-sm font-medium">${c.subject}</span>
+                <span class="text-sm font-medium">${escapeHtml(c.subject)}</span>
                 <span class="text-xs text-slate-500">${timeAgo(c.sent_at)}</span>
             </div>
-            <div class="text-xs text-slate-600 mt-1">${c.comm_type} · ${c.sent_by}</div>
+            <div class="text-xs text-slate-600 mt-1">${escapeHtml(c.comm_type)} · ${escapeHtml(c.sent_by)}</div>
         </div>
     `).join('');
 }
@@ -912,8 +920,8 @@ function renderNotes(list) {
     el.innerHTML = list.map(n => `
         <div class="p-2 rounded bg-[#f1f5f9] flex justify-between">
             <div>
-                <p class="text-sm">${n.content}</p>
-                <span class="text-xs text-slate-500">${n.author ? n.author + ' · ' : ''}${timeAgo(n.created_at)}</span>
+                <p class="text-sm">${escapeHtml(n.content)}</p>
+                <span class="text-xs text-slate-500">${n.author ? escapeHtml(n.author) + ' · ' : ''}${timeAgo(n.created_at)}</span>
             </div>
             ${deleteBtn(n.id)}
         </div>
@@ -933,7 +941,7 @@ function renderSNNotes(list) {
                     <span class="text-xs font-medium ${n.source === 'work_notes' ? 'text-blue-400' : 'text-green-400'}">${sourceLabel}</span>
                     <span class="text-xs text-slate-500">${n.author} · ${n.created_at ? new Date(n.created_at).toLocaleString() : ''}</span>
                 </div>
-                <p class="text-sm text-slate-700">${content.substring(0, 500)}${content.length > 500 ? '...' : ''}</p>
+                <p class="text-sm text-slate-700">${escapeHtml(content.substring(0, 500))}${content.length > 500 ? '...' : ''}</p>
             </div>
         `;
     }).join('');
@@ -972,8 +980,8 @@ function renderActions(list) {
         <div class="p-2 rounded bg-[#f1f5f9] flex items-start gap-2">
             <input type="checkbox" ${a.status === 'completed' ? 'checked' : ''} ${isAdmin ? `onchange="toggleAction('${a.id}', this.checked)"` : 'disabled'} class="mt-1">
             <div class="flex-1">
-                <p class="text-sm ${a.status === 'completed' ? 'line-through text-slate-500' : ''}">${a.description}</p>
-                <span class="text-xs text-slate-500">${a.team ? a.team + ' · ' : ''}${a.assignee || 'Unassigned'}</span>
+                <p class="text-sm ${a.status === 'completed' ? 'line-through text-slate-500' : ''}">${escapeHtml(a.description)}</p>
+                <span class="text-xs text-slate-500">${a.team ? escapeHtml(a.team) + ' · ' : ''}${escapeHtml(a.assignee || 'Unassigned')}</span>
             </div>
             ${isAdmin ? `<button class="text-xs text-slate-500 hover:text-red-400" onclick="deleteAction('${a.id}')">✕</button>` : ''}
         </div>
