@@ -17,6 +17,9 @@ _DATA_DIR.mkdir(exist_ok=True)
 
 _locks: dict[str, Lock] = {}
 
+# Maximum number of incident keys per store before LRU-style eviction
+MAX_KEYS: int = 500
+
 
 def _lock_for(name: str) -> Lock:
     if name not in _locks:
@@ -38,3 +41,14 @@ def save(name: str, data: Any) -> None:
     path = _DATA_DIR / f"{name}.json"
     with _lock_for(name):
         path.write_text(json.dumps(data, default=str), encoding="utf-8")
+
+
+def evict_oldest(store: dict, max_keys: int = MAX_KEYS) -> None:
+    """Remove the oldest keys from *store* if it exceeds *max_keys*.
+
+    Relies on Python 3.7+ insertion-order dicts — the first keys
+    inserted are the oldest and will be evicted first.
+    """
+    while len(store) > max_keys:
+        oldest_key = next(iter(store))
+        del store[oldest_key]

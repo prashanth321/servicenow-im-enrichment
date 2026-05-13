@@ -16,6 +16,7 @@ from datetime import datetime
 from models.dashboard_schemas import SLAClock, SLAClockCreate, SLAStatus
 from utils.logger import get_logger
 from utils import persistence
+from utils.persistence import evict_oldest
 
 _STORE_NAME = "sla_clocks"
 
@@ -24,6 +25,7 @@ def _load_store() -> dict[str, list[SLAClock]]:
     return {k: [SLAClock(**c) for c in v] for k, v in raw.items()}
 
 def _save_store() -> None:
+    evict_oldest(_sla_store)
     persistence.save(_STORE_NAME, {k: [c.model_dump() for c in v] for k, v in _sla_store.items()})
 
 # Persistent store: incident_number -> list[SLAClock]

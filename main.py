@@ -23,6 +23,9 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 
 from config.settings import settings
 from models.schemas import (
@@ -35,9 +38,11 @@ from services.cmdb_service import fetch_ci_details
 from services.impact_service import derive_business_impact
 from services.incident_service import fetch_incident, update_incident
 from services.oncall_service import fetch_oncall_details
+from utils.correlation import CorrelationIDMiddleware
 from utils.api_client import ServiceNowClient, sanitize_sysparm
 from utils.exceptions import CINotFoundError, OnCallFetchError, ServiceNowAPIError
 from utils.logger import get_logger
+from utils.sn_fields import extract_value
 
 logger = get_logger(__name__)
 
@@ -194,20 +199,13 @@ async def _polling_loop() -> None:
 
                     async def _enrich_one(record: dict) -> None:
                         try:
-                            def _val(field: object) -> str | None:
-                                if isinstance(field, dict):
-                                    return field.get("value") or None
-                                if isinstance(field, str) and field.strip():
-                                    return field.strip()
-                                return None
-
                             payload = WebhookPayload(
                                 sys_id=record.get("sys_id", ""),
                                 number=record.get("number", "UNKNOWN"),
                                 priority=str(record.get("priority", "")),
-                                cmdb_ci=_val(record.get("cmdb_ci")),
+                                cmdb_ci=extract_value(record.get("cmdb_ci")),
                                 short_description=record.get("short_description", ""),
-                                assignment_group=_val(record.get("assignment_group")),
+                                assignment_group=extract_value(record.get("assignment_group")),
                             )
                             async with _sem:
                                 await enrich_incident(payload)
@@ -253,6 +251,11 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Rate limiter — 60 requests/minute per IP for all endpoints
+limiter = Limiter(key_func=get_remote_address, default_limits=["60/minute"])
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
 # CORS — allow the dashboard frontend to call the API
 app.add_middleware(
     CORSMiddleware,
@@ -261,6 +264,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Per-request correlation ID
+app.add_middleware(CorrelationIDMiddleware)
 
 # Register auth routes
 from routes.auth_routes import router as auth_router  # noqa: E402
@@ -360,6 +366,7 @@ async def list_active_p2(_user: dict = Depends(get_current_user)):
 # ---------------------------------------------------------------------------
 
 @app.post("/webhook", response_model=dict)
+@limiter.limit("30/minute")
 async def webhook_handler(request: Request) -> JSONResponse:
     """Receive a ServiceNow incident event and trigger enrichment.
 
@@ -431,8 +438,24 @@ async def webhook_handler(request: Request) -> JSONResponse:
 
 @app.get("/health")
 async def health_check() -> dict:
-    """Simple liveness probe."""
-    return {"status": "ok"}
+    """Readiness probe — verifies ServiceNow connectivity."""
+    try:
+        async with ServiceNowClient() as client:
+            resp = await client.get(
+                "/api/now/table/incident",
+                params={"sysparm_limit": "1", "sysparm_fields": "sys_id"},
+            )
+            if resp.status_code < 400:
+                return {"status": "ok", "servicenow": "reachable"}
+            return JSONResponse(
+                status_code=503,
+                content={"status": "degraded", "servicenow": f"HTTP {resp.status_code}"},
+            )
+    except Exception as exc:
+        return JSONResponse(
+            status_code=503,
+            content={"status": "degraded", "servicenow": str(exc)},
+        )
 
 
 # ---------------------------------------------------------------------------

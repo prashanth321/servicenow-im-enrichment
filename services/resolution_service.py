@@ -12,13 +12,14 @@ Converted from IncidentResolutionModal.tsx.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 from models.dashboard_schemas import ResolutionRequest, ResolutionSummary
 from utils.api_client import ServiceNowClient
 from utils.exceptions import ServiceNowAPIError
 from utils.logger import get_logger
 from utils import persistence
+from utils.persistence import evict_oldest
 
 _STORE_NAME = "resolutions"
 
@@ -27,6 +28,7 @@ def _load_store() -> dict[str, ResolutionSummary]:
     return {k: ResolutionSummary(**v) for k, v in raw.items()}
 
 def _save_store() -> None:
+    evict_oldest(_resolution_store)
     persistence.save(_STORE_NAME, {k: v.model_dump() for k, v in _resolution_store.items()})
 
 # Persistent store: incident_number -> ResolutionSummary
@@ -124,7 +126,7 @@ def generate_summary(
         ],
         actions_taken=actions,
         problem_ticket=problem_ticket,
-        generated_at=datetime.utcnow(),
+        generated_at=datetime.now(timezone.utc),
     )
 
     _resolution_store[incident_number] = summary

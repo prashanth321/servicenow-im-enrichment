@@ -14,6 +14,7 @@ import uuid
 from models.dashboard_schemas import Stakeholder, StakeholderCreate
 from utils.logger import get_logger
 from utils import persistence
+from utils.persistence import evict_oldest
 
 _STORE_NAME = "stakeholders"
 
@@ -22,6 +23,7 @@ def _load_store() -> dict[str, list[Stakeholder]]:
     return {k: [Stakeholder(**s) for s in v] for k, v in raw.items()}
 
 def _save_store() -> None:
+    evict_oldest(_stakeholder_store)
     persistence.save(_STORE_NAME, {k: [s.model_dump() for s in v] for k, v in _stakeholder_store.items()})
 
 # Persistent store: incident_number -> list[Stakeholder]

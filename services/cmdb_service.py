@@ -13,6 +13,7 @@ from models.schemas import CIDetails
 from utils.api_client import ServiceNowClient
 from utils.exceptions import CINotFoundError, ServiceNowAPIError
 from utils.logger import get_logger
+from utils.sn_fields import extract_value
 
 
 async def fetch_ci_details(
@@ -54,23 +55,13 @@ async def fetch_ci_details(
 
         data: dict = response.json().get("result", {})
 
-        # ServiceNow may return linked fields as dicts with a "value" key or
-        # as plain strings — normalise both cases.
-        def _extract(field_value: object) -> str | None:
-            """Return a string value or None for empty / dict-typed fields."""
-            if isinstance(field_value, dict):
-                return field_value.get("value") or field_value.get("display_value") or None
-            if isinstance(field_value, str) and field_value.strip():
-                return field_value.strip()
-            return None
-
         ci_details = CIDetails(
-            ci_name=_extract(data.get("name")),
-            business_application=_extract(data.get("business_criticality"))
-                or _extract(data.get("u_business_application")),
-            service_mapping=_extract(data.get("service_classification"))
-                or _extract(data.get("u_service_mapping")),
-            support_group=_extract(data.get("support_group")),
+            ci_name=extract_value(data.get("name")),
+            business_application=extract_value(data.get("business_criticality"))
+                or extract_value(data.get("u_business_application")),
+            service_mapping=extract_value(data.get("service_classification"))
+                or extract_value(data.get("u_service_mapping")),
+            support_group=extract_value(data.get("support_group")),
         )
 
         logger.info("CI details fetched for %s: ci_name=%s", ci_sys_id, ci_details.ci_name)

@@ -10,13 +10,14 @@ Converted from PriorityTracker.tsx.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 from models.dashboard_schemas import PriorityChange
 from utils.api_client import ServiceNowClient
 from utils.exceptions import ServiceNowAPIError
 from utils.logger import get_logger
 from utils import persistence
+from utils.persistence import evict_oldest
 
 _STORE_NAME = "priority"
 
@@ -25,6 +26,7 @@ def _load_store() -> dict[str, list[PriorityChange]]:
     return {k: [PriorityChange(**p) for p in v] for k, v in raw.items()}
 
 def _save_store() -> None:
+    evict_oldest(_priority_store)
     persistence.save(_STORE_NAME, {k: [p.model_dump() for p in v] for k, v in _priority_store.items()})
 
 # Persistent store: incident_number -> list[PriorityChange]
@@ -50,7 +52,7 @@ def add_priority_change(
     change = PriorityChange(
         from_priority=from_priority,
         to_priority=to_priority,
-        changed_at=datetime.utcnow(),
+        changed_at=datetime.now(timezone.utc),
         changed_by=changed_by,
         reason=reason,
     )

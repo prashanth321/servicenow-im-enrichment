@@ -10,7 +10,7 @@ Converted from NotesPanel.tsx / ActionItemsPanel.tsx / ChangesPanel.tsx.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 from models.dashboard_schemas import (
     ActionItem,
@@ -24,6 +24,7 @@ from models.dashboard_schemas import (
 )
 from utils.logger import get_logger
 from utils import persistence
+from utils.persistence import evict_oldest
 
 _NOTES_STORE = "notes"
 _ACTIONS_STORE = "actions"
@@ -42,12 +43,15 @@ def _load_changes() -> dict[str, list[InfraChange]]:
     return {k: [InfraChange(**c) for c in v] for k, v in raw.items()}
 
 def _save_notes():
+    evict_oldest(_notes_store)
     persistence.save(_NOTES_STORE, {k: [n.model_dump() for n in v] for k, v in _notes_store.items()})
 
 def _save_actions():
+    evict_oldest(_actions_store)
     persistence.save(_ACTIONS_STORE, {k: [a.model_dump() for a in v] for k, v in _actions_store.items()})
 
 def _save_changes():
+    evict_oldest(_changes_store)
     persistence.save(_CHANGES_STORE, {k: [c.model_dump() for c in v] for k, v in _changes_store.items()})
 
 # Persistent stores keyed by incident_number
@@ -75,7 +79,7 @@ def add_note(incident_number: str, payload: NoteCreate) -> Note:
         incident_number=incident_number,
         content=payload.content,
         author=payload.author,
-        created_at=datetime.utcnow(),
+        created_at=datetime.now(timezone.utc),
     )
     _notes_store.setdefault(incident_number, []).append(note)
     _save_notes()
@@ -113,7 +117,7 @@ def add_action_item(incident_number: str, payload: ActionItemCreate) -> ActionIt
         assignee=payload.assignee,
         due_date=payload.due_date,
         status=ActionItemStatus.OPEN,
-        created_at=datetime.utcnow(),
+        created_at=datetime.now(timezone.utc),
     )
     _actions_store.setdefault(incident_number, []).append(item)
     _save_actions()
@@ -169,7 +173,7 @@ def add_change(incident_number: str, payload: InfraChangeCreate) -> InfraChange:
         description=payload.description,
         owner_team=payload.owner_team,
         assignee=payload.assignee,
-        timestamp=datetime.utcnow(),
+        timestamp=datetime.now(timezone.utc),
     )
     _changes_store.setdefault(incident_number, []).append(change)
     _save_changes()

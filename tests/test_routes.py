@@ -168,3 +168,65 @@ class TestSysparmSanitization:
     def test_sanitize_clean_input_unchanged(self):
         from utils.api_client import sanitize_sysparm
         assert sanitize_sysparm("INC0012345") == "INC0012345"
+
+
+# ── SN field extraction helpers ───────────────────────────────────────
+
+class TestSnFieldHelpers:
+    def test_extract_value_from_dict(self):
+        from utils.sn_fields import extract_value
+        assert extract_value({"value": "abc", "display_value": "ABC"}) == "abc"
+
+    def test_extract_value_from_string(self):
+        from utils.sn_fields import extract_value
+        assert extract_value("abc") == "abc"
+
+    def test_extract_value_none(self):
+        from utils.sn_fields import extract_value
+        assert extract_value(None) is None
+
+    def test_extract_display_from_dict(self):
+        from utils.sn_fields import extract_display
+        assert extract_display({"value": "abc", "display_value": "ABC"}) == "ABC"
+
+    def test_extract_display_prefers_display_value(self):
+        from utils.sn_fields import extract_display
+        assert extract_display({"display_value": "Nice", "value": "raw"}) == "Nice"
+
+    def test_extract_display_str_never_none(self):
+        from utils.sn_fields import extract_display_str
+        assert extract_display_str(None) == ""
+
+
+# ── Store eviction ────────────────────────────────────────────────────
+
+class TestStoreEviction:
+    def test_evict_oldest_caps_size(self):
+        from utils.persistence import evict_oldest
+        store = {f"INC{i:04d}": [f"data_{i}"] for i in range(10)}
+        evict_oldest(store, max_keys=5)
+        assert len(store) == 5
+        assert "INC0000" not in store
+        assert "INC0009" in store
+
+    def test_evict_oldest_noop_under_limit(self):
+        from utils.persistence import evict_oldest
+        store = {"a": 1, "b": 2}
+        evict_oldest(store, max_keys=5)
+        assert len(store) == 2
+
+
+# ── Correlation ID middleware ─────────────────────────────────────────
+
+class TestCorrelationID:
+    def test_response_has_request_id_header(self, client):
+        resp = client.post("/api/login", json={
+            "email": "admin@servicenow.com",
+            "password": "admin123",
+        })
+        assert "x-request-id" in resp.headers
+
+    def test_custom_request_id_echoed(self, client):
+        custom_id = "test-correlation-123"
+        resp = client.post("/api/logout", headers={"X-Request-ID": custom_id})
+        assert resp.headers.get("x-request-id") == custom_id

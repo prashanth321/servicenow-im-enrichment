@@ -56,6 +56,7 @@ from services.oncall_service import fetch_oncall_details
 from services.auth_service import get_current_user
 from utils.api_client import ServiceNowClient, sanitize_sysparm
 from utils.logger import get_logger
+from utils.sn_fields import extract_display, extract_value
 
 router = APIRouter(
     prefix="/incidents",
@@ -103,31 +104,20 @@ async def _get_incident_detail(incident_number: str) -> IncidentDetail:
 
         r = results[0]
 
-        def _dv(field: object) -> str | None:
-            """Extract display_value from a SN field."""
-            if isinstance(field, dict):
-                return field.get("display_value") or field.get("value") or None
-            return field if isinstance(field, str) and field.strip() else None
-
-        def _val(field: object) -> str | None:
-            if isinstance(field, dict):
-                return field.get("value") or None
-            return field if isinstance(field, str) and field.strip() else None
-
         return IncidentDetail(
-            sys_id=_val(r.get("sys_id")) or "",
-            number=_dv(r.get("number")) or incident_number,
-            priority=_val(r.get("priority")) or "4",
-            state=_map_state(_val(r.get("state"))),
-            short_description=_dv(r.get("short_description")) or "",
-            description=_dv(r.get("description")) or "",
-            cmdb_ci=_val(r.get("cmdb_ci")),
-            ci_name=_dv(r.get("cmdb_ci")),
-            service_offering=_dv(r.get("service_offering")),
-            assignment_group=_dv(r.get("assignment_group")),
-            assigned_to=_dv(r.get("assigned_to")),
-            opened_at=_dv(r.get("opened_at")) or _dv(r.get("sys_created_on")),
-            opened_by=_dv(r.get("opened_by")),
+            sys_id=extract_value(r.get("sys_id")) or "",
+            number=extract_display(r.get("number")) or incident_number,
+            priority=extract_value(r.get("priority")) or "4",
+            state=_map_state(extract_value(r.get("state"))),
+            short_description=extract_display(r.get("short_description")) or "",
+            description=extract_display(r.get("description")) or "",
+            cmdb_ci=extract_value(r.get("cmdb_ci")),
+            ci_name=extract_display(r.get("cmdb_ci")),
+            service_offering=extract_display(r.get("service_offering")),
+            assignment_group=extract_display(r.get("assignment_group")),
+            assigned_to=extract_display(r.get("assigned_to")),
+            opened_at=extract_display(r.get("opened_at")) or extract_display(r.get("sys_created_on")),
+            opened_by=extract_display(r.get("opened_by")),
             major_incident_manager=_dv(r.get("u_major_incident_manager")),
             business_impact=_dv(r.get("business_impact")),
         )
@@ -150,14 +140,14 @@ async def _auto_sync_to_servicenow(incident_number: str, latest_entry: str = "")
     Only sends the latest change, not all accumulated data.
     Failures are logged but do not block the response.
     """
-    from datetime import datetime
+    from datetime import datetime, timezone
 
     try:
         incident = await _get_incident_detail(incident_number)
 
         lines: list[str] = ["=== IM Dashboard Update ==="]
         lines.append(f"Incident: {incident_number}")
-        lines.append(f"Updated at: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC")
+        lines.append(f"Updated at: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')} UTC")
         lines.append("")
 
         if latest_entry:
@@ -508,31 +498,12 @@ async def get_vendor(incident_number: str):
     """Get vendor info for an incident, fetched fresh from ServiceNow."""
     try:
         incident = await _get_incident_detail(incident_number)
-        # Try to get vendor from the CI's vendor/company field in ServiceNow
-        if incident.cmdb_ci:
-            async with ServiceNowClient() as client:
-                # Look up the CI to get its vendor/company
-                ci_resp = await client.get(
-                    f"/api/now/table/cmdb_ci/{incident.cmdb_ci}",
-                    params={
-                        "sysparm_fields": "vendor,manufacturer,support_group",
-                        "sysparm_display_value": "all",
-                    },
-                )
-                ci_data = ci_resp.json().get("result", {})
-                vendor_ref = ci_data.get("vendor") or ci_data.get("manufacturer")
-                vendor_sys_id = None
-                if isinstance(vendor_ref, dict):
-                    vendor_sys_id = vendor_ref.get("value")
-                elif isinstance(vendor_ref, str) and vendor_ref.strip():
-                    vendor_sys_id = vendor_ref.strip()
-
-                if vendor_sys_id:
-                    vendor = await vendor_service.fetch_vendor_from_servicenow(
-                        client, vendor_sys_id, incident_number
-                    )
-                    vendor_service.set_vendor_info(incident_number, vendor)
-                    return vendor
+        async with ServiceNowClient() as client:
+            vendor = await vendor_service.lookup_vendor_for_incident(
+                client, incident_number, incident.cmdb_ci, incident.assignment_group,
+            )
+            if vendor:
+                return vendor
     except Exception:
         logger.warning("Failed to fetch vendor from SN for %s, using cached/default", incident_number)
 
@@ -766,7 +737,7 @@ async def sync_actions_to_servicenow(incident_number: str):
     # Build work_notes content
     lines: list[str] = ["=== IM Dashboard Sync ==="]
     lines.append(f"Incident: {incident_number}")
-    lines.append(f"Synced at: {__import__('datetime').datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC")
+    lines.append(f"Synced at: {__import__('datetime').datetime.now(__import__('datetime').timezone.utc).strftime('%Y-%m-%d %H:%M:%S')} UTC")
     lines.append("")
 
     if actions:
@@ -836,65 +807,14 @@ async def get_dashboard(incident_number: str):
                 client, incident.sys_id, incident_number
             )
 
-            # Fetch live vendor data from ServiceNow via CI
-            if incident.cmdb_ci:
-                try:
-                    ci_resp = await client.get(
-                        f"/api/now/table/cmdb_ci/{incident.cmdb_ci}",
-                        params={
-                            "sysparm_fields": "vendor,manufacturer,support_group",
-                            "sysparm_display_value": "all",
-                        },
-                    )
-                    ci_data = ci_resp.json().get("result", {})
-                    vendor_ref = ci_data.get("vendor") or ci_data.get("manufacturer")
-                    vendor_sys_id = None
-                    if isinstance(vendor_ref, dict):
-                        vendor_sys_id = vendor_ref.get("value")
-                    elif isinstance(vendor_ref, str) and vendor_ref.strip():
-                        vendor_sys_id = vendor_ref.strip()
-
-                    if vendor_sys_id:
-                        vendor_info = await vendor_service.fetch_vendor_from_servicenow(
-                            client, vendor_sys_id, incident_number
-                        )
-                        vendor_service.set_vendor_info(incident_number, vendor_info)
-                except Exception:
-                    logger.warning("Vendor fetch from SN failed for %s in dashboard", incident_number)
+            vendor_info = await vendor_service.lookup_vendor_for_incident(
+                client, incident_number, incident.cmdb_ci, incident.assignment_group,
+            )
     except Exception:
         priority_history = priority_service.get_priority_history(incident_number)
 
     if vendor_info is None:
         vendor_info = vendor_service.get_vendor_info(incident_number)
-
-    # Also try fetching vendor from SN via the assignment group's company if CI had no vendor
-    if vendor_info is None and incident.assignment_group:
-        try:
-            async with ServiceNowClient() as client:
-                grp_resp = await client.get(
-                    "/api/now/table/sys_user_group",
-                    params={
-                        "sysparm_query": f"name={incident.assignment_group}",
-                        "sysparm_fields": "u_vendor,company",
-                        "sysparm_display_value": "all",
-                        "sysparm_limit": "1",
-                    },
-                )
-                grp_data = grp_resp.json().get("result", [])
-                if grp_data:
-                    vendor_ref = grp_data[0].get("u_vendor") or grp_data[0].get("company")
-                    vendor_sys_id = None
-                    if isinstance(vendor_ref, dict):
-                        vendor_sys_id = vendor_ref.get("value")
-                    elif isinstance(vendor_ref, str) and vendor_ref.strip():
-                        vendor_sys_id = vendor_ref.strip()
-                    if vendor_sys_id:
-                        vendor_info = await vendor_service.fetch_vendor_from_servicenow(
-                            client, vendor_sys_id, incident_number
-                        )
-                        vendor_service.set_vendor_info(incident_number, vendor_info)
-        except Exception:
-            logger.warning("Vendor fetch via assignment group failed for %s", incident_number)
 
     return DashboardData(
         incident=incident,

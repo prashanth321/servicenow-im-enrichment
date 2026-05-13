@@ -8,12 +8,13 @@ Provides endpoints for the Major Incidents Dashboard:
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Query
 
 from utils.api_client import ServiceNowClient
 from utils.logger import get_logger
+from utils.sn_fields import extract_display_str, extract_value_str
 
 router = APIRouter(tags=["major-incidents"])
 logger = get_logger(__name__)
@@ -28,35 +29,21 @@ def _map_priority(val: str | dict | None) -> str:
     return v.split(" ")[0] if v else "4"
 
 
-def _display(field: object) -> str:
-    """Extract display_value from a SN field."""
-    if isinstance(field, dict):
-        return field.get("display_value") or field.get("value") or ""
-    return str(field) if field else ""
-
-
-def _value(field: object) -> str:
-    """Extract raw value from a SN field."""
-    if isinstance(field, dict):
-        return field.get("value") or ""
-    return str(field) if field else ""
-
-
 def _build_incident(record: dict) -> dict:
     """Map a ServiceNow incident record to our dashboard model."""
     return {
-        "id": _display(record.get("number")),
-        "sys_id": _value(record.get("sys_id")),
+        "id": extract_display_str(record.get("number")),
+        "sys_id": extract_value_str(record.get("sys_id")),
         "priority": _map_priority(record.get("priority")),
-        "title": _display(record.get("short_description")) or "No description",
-        "team": _display(record.get("assignment_group")) or "Unassigned",
-        "assigned_to": _display(record.get("assigned_to")) or "Unassigned",
-        "status": _map_state(_value(record.get("state"))),
-        "state_display": _display(record.get("state")),
-        "cmdb_ci": _display(record.get("cmdb_ci")) or None,
-        "business_impact": _display(record.get("business_impact")) or None,
-        "created_at": _value(record.get("opened_at")) or None,
-        "resolved_at": _value(record.get("resolved_at")) or None,
+        "title": extract_display_str(record.get("short_description")) or "No description",
+        "team": extract_display_str(record.get("assignment_group")) or "Unassigned",
+        "assigned_to": extract_display_str(record.get("assigned_to")) or "Unassigned",
+        "status": _map_state(extract_value_str(record.get("state"))),
+        "state_display": extract_display_str(record.get("state")),
+        "cmdb_ci": extract_display_str(record.get("cmdb_ci")) or None,
+        "business_impact": extract_display_str(record.get("business_impact")) or None,
+        "created_at": extract_value_str(record.get("opened_at")) or None,
+        "resolved_at": extract_value_str(record.get("resolved_at")) or None,
     }
 
 
@@ -105,7 +92,7 @@ async def incidents_summary():
         p2_count = len(p2_resp.json().get("result", []))
 
         # Resolved today — state=6 and resolved_at is today
-        today = datetime.utcnow().strftime("%Y-%m-%d")
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         resolved_resp = await client.get("/api/now/table/incident", params={
             "sysparm_query": (
                 f"priorityIN1,2^state=6^resolved_at>={today} 00:00:00"
@@ -139,7 +126,7 @@ async def list_incidents(status: str = Query("ongoing", pattern="^(ongoing|resol
     Query params:
         status: 'ongoing' | 'resolved_today' | 'historic'
     """
-    today = datetime.utcnow().strftime("%Y-%m-%d")
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
     if status == "ongoing":
         query = "priorityIN1,2^active=true^ORDERBYpriority^ORDERBYDESCopened_at"

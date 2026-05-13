@@ -10,11 +10,12 @@ Converted from HandoverPanel.tsx / HandoverChecklistModal.tsx.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 from models.dashboard_schemas import HandoverChecklist, HandoverRecord, HandoverRequest
 from utils.logger import get_logger
 from utils import persistence
+from utils.persistence import evict_oldest
 
 _HANDOVER_STORE = "handovers"
 _OWNER_STORE = "owners"
@@ -24,9 +25,11 @@ def _load_handovers() -> dict[str, list[HandoverRecord]]:
     return {k: [HandoverRecord(**r) for r in v] for k, v in raw.items()}
 
 def _save_handovers() -> None:
+    evict_oldest(_handover_store)
     persistence.save(_HANDOVER_STORE, {k: [r.model_dump() for r in v] for k, v in _handover_store.items()})
 
 def _save_owners() -> None:
+    evict_oldest(_owner_store)
     persistence.save(_OWNER_STORE, _owner_store)
 
 # Persistent stores
@@ -105,7 +108,7 @@ def transfer_ownership(
         from_manager=from_manager,
         to_manager=request.target_manager,
         checklist=request.checklist,
-        transferred_at=datetime.utcnow(),
+        transferred_at=datetime.now(timezone.utc),
     )
 
     _handover_store.setdefault(incident_number, []).append(record)

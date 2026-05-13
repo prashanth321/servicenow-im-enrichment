@@ -4,14 +4,17 @@ Authentication API routes — login, logout, and token validation.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, EmailStr
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 from services.auth_service import generate_token, get_current_user, get_user_role, validate_credentials, verify_token
 from utils.logger import get_logger
 
 router = APIRouter(prefix="/api", tags=["auth"])
 logger = get_logger(__name__)
+_limiter = Limiter(key_func=get_remote_address)
 
 
 class LoginRequest(BaseModel):
@@ -27,7 +30,8 @@ class LoginResponse(BaseModel):
 
 
 @router.post("/login", response_model=LoginResponse)
-async def login(payload: LoginRequest):
+@_limiter.limit("10/minute")
+async def login(request: Request, payload: LoginRequest):
     """Authenticate user and return a session token."""
     if not payload.email or not payload.password:
         raise HTTPException(status_code=400, detail="Email and password are required")

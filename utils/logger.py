@@ -53,3 +53,26 @@ def get_logger(
         logger.propagate = False
 
     return logging.LoggerAdapter(logger, {"incident_number": incident_number})
+
+
+class _CorrelationAdapter(logging.LoggerAdapter):
+    """LoggerAdapter that auto-injects the current request correlation ID."""
+
+    def process(self, msg, kwargs):
+        from utils.correlation import get_correlation_id
+
+        extra = {**self.extra, "correlation_id": get_correlation_id()}
+        return msg, {**kwargs, "extra": extra}
+
+
+def get_request_logger(
+    name: str,
+    incident_number: str = "N/A",
+) -> logging.LoggerAdapter:
+    """Like :func:`get_logger` but also includes ``correlation_id``."""
+    logger = logging.getLogger(name)
+    logger.setLevel(settings.log_level.upper())
+    if not logger.handlers:
+        logger.addHandler(_handler)
+        logger.propagate = False
+    return _CorrelationAdapter(logger, {"incident_number": incident_number})

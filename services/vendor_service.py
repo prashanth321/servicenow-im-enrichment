@@ -14,7 +14,9 @@ from models.dashboard_schemas import VendorInfo, VendorSLA, VendorSupportHours
 from utils.api_client import ServiceNowClient
 from utils.exceptions import ServiceNowAPIError
 from utils.logger import get_logger
+from utils.sn_fields import extract_value
 from utils import persistence
+from utils.persistence import evict_oldest
 
 _STORE_NAME = "vendors"
 
@@ -23,6 +25,7 @@ def _load_store() -> dict[str, VendorInfo]:
     return {k: VendorInfo(**v) for k, v in raw.items()}
 
 def _save_store() -> None:
+    evict_oldest(_vendor_store)
     persistence.save(_STORE_NAME, {k: v.model_dump() for k, v in _vendor_store.items()})
 
 # Persistent store: incident_number -> VendorInfo
@@ -112,3 +115,65 @@ async def fetch_vendor_from_servicenow(
     except Exception as exc:
         log.error("Error fetching vendor %s: %s", vendor_sys_id, exc)
         raise ServiceNowAPIError(f"Error fetching vendor {vendor_sys_id}") from exc
+
+
+async def lookup_vendor_for_incident(
+    client: ServiceNowClient,
+    incident_number: str,
+    cmdb_ci: str | None,
+    assignment_group: str | None,
+) -> VendorInfo | None:
+    """Resolve vendor info for an incident via CI or assignment group.
+
+    Tries, in order:
+    1. CI record's ``vendor`` / ``manufacturer`` reference.
+    2. Assignment group's ``u_vendor`` / ``company`` reference.
+
+    Returns ``None`` if neither lookup yields a vendor.
+    """
+    log = get_logger(__name__, incident_number)
+
+    # -- 1. Try CI's vendor/manufacturer --
+    if cmdb_ci:
+        try:
+            ci_resp = await client.get(
+                f"/api/now/table/cmdb_ci/{cmdb_ci}",
+                params={
+                    "sysparm_fields": "vendor,manufacturer,support_group",
+                    "sysparm_display_value": "all",
+                },
+            )
+            ci_data = ci_resp.json().get("result", {})
+            vendor_ref = ci_data.get("vendor") or ci_data.get("manufacturer")
+            vendor_sys_id = extract_value(vendor_ref)
+            if vendor_sys_id:
+                vendor = await fetch_vendor_from_servicenow(client, vendor_sys_id, incident_number)
+                set_vendor_info(incident_number, vendor)
+                return vendor
+        except Exception:
+            log.warning("Vendor fetch from CI failed for %s", incident_number)
+
+    # -- 2. Try assignment group's company --
+    if assignment_group:
+        try:
+            grp_resp = await client.get(
+                "/api/now/table/sys_user_group",
+                params={
+                    "sysparm_query": f"name={assignment_group}",
+                    "sysparm_fields": "u_vendor,company",
+                    "sysparm_display_value": "all",
+                    "sysparm_limit": "1",
+                },
+            )
+            grp_data = grp_resp.json().get("result", [])
+            if grp_data:
+                vendor_ref = grp_data[0].get("u_vendor") or grp_data[0].get("company")
+                vendor_sys_id = extract_value(vendor_ref)
+                if vendor_sys_id:
+                    vendor = await fetch_vendor_from_servicenow(client, vendor_sys_id, incident_number)
+                    set_vendor_info(incident_number, vendor)
+                    return vendor
+        except Exception:
+            log.warning("Vendor fetch via assignment group failed for %s", incident_number)
+
+    return None

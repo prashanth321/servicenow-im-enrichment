@@ -13,7 +13,7 @@ from __future__ import annotations
 import asyncio
 import smtplib
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from functools import partial
@@ -22,6 +22,7 @@ from config.settings import settings
 from models.dashboard_schemas import Communication, CommunicationCreate, CommunicationType
 from utils.logger import get_logger
 from utils import persistence
+from utils.persistence import evict_oldest
 
 _STORE_NAME = "communications"
 
@@ -30,6 +31,7 @@ def _load_store() -> dict[str, list[Communication]]:
     return {k: [Communication(**c) for c in v] for k, v in raw.items()}
 
 def _save_store() -> None:
+    evict_oldest(_comm_store)
     persistence.save(_STORE_NAME, {k: [c.model_dump() for c in v] for k, v in _comm_store.items()})
 
 # Persistent store: incident_number -> list[Communication]
@@ -125,7 +127,7 @@ async def add_communication(
         subject=payload.subject,
         body=payload.body,
         recipients=payload.recipients,
-        sent_at=datetime.utcnow(),
+        sent_at=datetime.now(timezone.utc),
         sent_by=sent_by,
     )
     _comm_store.setdefault(incident_number, []).append(comm)

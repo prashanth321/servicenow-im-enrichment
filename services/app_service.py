@@ -13,6 +13,7 @@ from models.schemas import AppDetails
 from utils.api_client import ServiceNowClient
 from utils.exceptions import ServiceNowAPIError
 from utils.logger import get_logger
+from utils.sn_fields import extract_display
 
 
 async def fetch_app_details(
@@ -51,18 +52,10 @@ async def fetch_app_details(
 
         data: dict = response.json().get("result", {})
 
-        def _extract(field_value: object) -> str | None:
-            """Normalise dict-typed or string-typed ServiceNow field values."""
-            if isinstance(field_value, dict):
-                return field_value.get("display_value") or field_value.get("value") or None
-            if isinstance(field_value, str) and field_value.strip():
-                return field_value.strip()
-            return None
-
         app_details = AppDetails(
-            application_owner=_extract(data.get("owned_by")) or _extract(data.get("application_owner")),
-            technical_owner=_extract(data.get("managed_by")) or _extract(data.get("u_technical_owner")),
-            contact_email=_extract(data.get("u_contact_email")) or _extract(data.get("email")),
+            application_owner=extract_display(data.get("owned_by")) or extract_display(data.get("application_owner")),
+            technical_owner=extract_display(data.get("managed_by")) or extract_display(data.get("u_technical_owner")),
+            contact_email=extract_display(data.get("u_contact_email")) or extract_display(data.get("email")),
         )
 
         logger.info(

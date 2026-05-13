@@ -9,7 +9,7 @@ front-end components.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 
 from pydantic import BaseModel, Field
@@ -91,7 +91,7 @@ class SLAClock(BaseModel):
     target_minutes: int = Field(..., description="Target duration in minutes")
     remaining_seconds: int = Field(..., description="Seconds remaining (negative = breached)")
     status: SLAStatus = SLAStatus.RUNNING
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class SLAClockCreate(BaseModel):
@@ -150,7 +150,7 @@ class Communication(BaseModel):
     subject: str = ""
     body: str = ""
     recipients: list[str] = Field(default_factory=list)
-    sent_at: datetime = Field(default_factory=datetime.utcnow)
+    sent_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     sent_by: str = ""
 
 
@@ -174,7 +174,7 @@ class Note(BaseModel):
     incident_number: str = ""
     content: str
     author: str = ""
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class NoteCreate(BaseModel):
@@ -196,7 +196,7 @@ class ActionItem(BaseModel):
     assignee: str = ""
     due_date: datetime | None = None
     status: ActionItemStatus = ActionItemStatus.OPEN
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class ActionItemCreate(BaseModel):
@@ -224,7 +224,7 @@ class InfraChange(BaseModel):
     description: str
     owner_team: str = ""
     assignee: str = ""
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class InfraChangeCreate(BaseModel):
@@ -337,7 +337,7 @@ class HandoverRecord(BaseModel):
     from_manager: str = ""
     to_manager: str = ""
     checklist: HandoverChecklist = Field(default_factory=HandoverChecklist)
-    transferred_at: datetime = Field(default_factory=datetime.utcnow)
+    transferred_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 # ---------------------------------------------------------------------------
@@ -354,7 +354,7 @@ class ResolutionSummary(BaseModel):
     actions_taken: list[dict] = Field(default_factory=list)
     problem_ticket: str | None = None
     confluence_url: str | None = None
-    generated_at: datetime = Field(default_factory=datetime.utcnow)
+    generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class ResolutionRequest(BaseModel):

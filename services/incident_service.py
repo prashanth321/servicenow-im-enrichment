@@ -17,6 +17,7 @@ from models.schemas import EnrichedIncident, UpdatePayload, WebhookPayload
 from utils.api_client import ServiceNowClient
 from utils.exceptions import ServiceNowAPIError
 from utils.logger import get_logger
+from utils.sn_fields import extract_value
 
 
 # ---------------------------------------------------------------------------
@@ -55,21 +56,13 @@ async def fetch_incident(
 
         data: dict = response.json().get("result", {})
 
-        def _val(field: object) -> str | None:
-            """Extract a plain string value from a potentially dict-typed SN field."""
-            if isinstance(field, dict):
-                return field.get("value") or None
-            if isinstance(field, str) and field.strip():
-                return field.strip()
-            return None
-
         payload = WebhookPayload(
             sys_id=data.get("sys_id", sys_id),
             number=data.get("number", "UNKNOWN"),
             priority=str(data.get("priority", "")),
-            cmdb_ci=_val(data.get("cmdb_ci")),
+            cmdb_ci=extract_value(data.get("cmdb_ci")),
             short_description=data.get("short_description", ""),
-            assignment_group=_val(data.get("assignment_group")),
+            assignment_group=extract_value(data.get("assignment_group")),
         )
 
         logger.info("Incident fetched: %s (priority=%s)", payload.number, payload.priority)
