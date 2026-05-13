@@ -20,6 +20,7 @@ Each endpoint group corresponds to a React panel component:
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -140,7 +141,6 @@ async def _auto_sync_to_servicenow(incident_number: str, latest_entry: str = "")
     Only sends the latest change, not all accumulated data.
     Failures are logged but do not block the response.
     """
-    from datetime import datetime, timezone
 
     try:
         incident = await _get_incident_detail(incident_number)
@@ -737,7 +737,7 @@ async def sync_actions_to_servicenow(incident_number: str):
     # Build work_notes content
     lines: list[str] = ["=== IM Dashboard Sync ==="]
     lines.append(f"Incident: {incident_number}")
-    lines.append(f"Synced at: {__import__('datetime').datetime.now(__import__('datetime').timezone.utc).strftime('%Y-%m-%d %H:%M:%S')} UTC")
+    lines.append(f"Synced at: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')} UTC")
     lines.append("")
 
     if actions:

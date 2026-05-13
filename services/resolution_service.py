@@ -61,7 +61,7 @@ def generate_summary(
     problem_ticket = f"PRB{uuid.uuid4().hex[:7].upper()}"
 
     # Extract key lines from transcript for summary
-    lines = [l.strip() for l in transcript.strip().splitlines() if l.strip()]
+    lines = [line.strip() for line in transcript.strip().splitlines() if line.strip()]
     total_lines = len(lines)
 
     # Build summary from transcript content

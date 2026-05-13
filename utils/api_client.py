@@ -100,7 +100,8 @@ class ServiceNowClient:
         Returns:
             The ``httpx.Response`` object.
         """
-        assert self._client is not None, "Client not initialised — use `async with`"
+        if self._client is None:
+            raise RuntimeError("Client not initialised — use `async with`")
         response = await self._client.get(path, params=params)
         return response
 
@@ -121,6 +122,7 @@ class ServiceNowClient:
         Returns:
             The ``httpx.Response`` object.
         """
-        assert self._client is not None, "Client not initialised — use `async with`"
+        if self._client is None:
+            raise RuntimeError("Client not initialised — use `async with`")
         response = await self._client.patch(path, json=json_body)
         return response

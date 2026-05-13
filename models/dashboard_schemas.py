@@ -46,14 +46,6 @@ class ActionItemStatus(str, Enum):
     COMPLETED = "completed"
 
 
-class HandoverCheckItem(str, Enum):
-    STATUS_REVIEWED = "status_reviewed"
-    ACTIONS_TRANSFERRED = "actions_transferred"
-    STAKEHOLDER_COMMS_SHARED = "stakeholder_comms_shared"
-    VENDOR_STATUS_CONFIRMED = "vendor_status_confirmed"
-    ESCALATION_POINTS_IDENTIFIED = "escalation_points_identified"
-
-
 # ---------------------------------------------------------------------------
 # Incident detail (full dashboard view)
 # ---------------------------------------------------------------------------
