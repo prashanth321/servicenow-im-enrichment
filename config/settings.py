@@ -40,6 +40,9 @@ class Settings(BaseSettings):
     smtp_from_email: str = ""
     smtp_use_tls: bool = True
 
+    # Dashboard user accounts: pipe-separated entries of email:bcrypt_hash:role
+    auth_users: str = ""
+
     model_config = {
         "env_file": str(_ENV_FILE),
         "env_file_encoding": "utf-8",

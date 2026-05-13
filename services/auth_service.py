@@ -2,8 +2,8 @@
 Authentication service — handles login validation, token generation,
 and token verification for the IM Dashboard.
 
-Uses a simple JWT-like token approach with HMAC-SHA256.
-In production, replace the mock user store with a real identity provider.
+User credentials are loaded from the AUTH_USERS environment variable.
+Passwords are hashed with bcrypt.
 """
 
 from __future__ import annotations
@@ -14,7 +14,12 @@ import json
 import time
 from typing import Optional
 
+import bcrypt
+
 from config.settings import settings
+from utils.logger import get_logger
+
+log = get_logger(__name__)
 
 # Secret key derived from the SN password (in production, use a dedicated secret)
 _SECRET = hashlib.sha256(settings.sn_password.encode()).hexdigest()
@@ -22,39 +27,46 @@ _SECRET = hashlib.sha256(settings.sn_password.encode()).hexdigest()
 # Token validity: 8 hours
 _TOKEN_EXPIRY_SECONDS = 8 * 3600
 
-# Mock user credentials (email -> {password_hash, role})
-# In production, validate against ServiceNow or an identity provider.
-_MOCK_USERS: dict[str, dict[str, str]] = {
-    "admin@servicenow.com": {
-        "password": hashlib.sha256("admin123".encode()).hexdigest(),
-        "role": "admin",
-    },
-    "im@servicenow.com": {
-        "password": hashlib.sha256("incident2026".encode()).hexdigest(),
-        "role": "admin",
-    },
-    "readonly@servicenow.com": {
-        "password": hashlib.sha256("readonly123".encode()).hexdigest(),
-        "role": "readonly",
-    },
-}
+
+def _load_users() -> dict[str, dict[str, str]]:
+    """Parse AUTH_USERS env var into a user dict.
+
+    Format: email1:bcrypt_hash1:role1|email2:bcrypt_hash2:role2|...
+    """
+    users: dict[str, dict[str, str]] = {}
+    raw = settings.auth_users.strip()
+    if not raw:
+        log.warning("AUTH_USERS is empty — no dashboard users configured")
+        return users
+    for entry in raw.split("|"):
+        parts = entry.strip().split(":", 2)
+        if len(parts) != 3:
+            log.warning("Skipping malformed AUTH_USERS entry: %s", entry)
+            continue
+        email, pw_hash, role = parts
+        users[email.lower()] = {"password_hash": pw_hash, "role": role}
+    log.info("Loaded %d dashboard user(s) from AUTH_USERS", len(users))
+    return users
 
 
-def _hash_password(password: str) -> str:
-    return hashlib.sha256(password.encode()).hexdigest()
+_USERS = _load_users()
 
 
 def validate_credentials(email: str, password: str) -> bool:
-    """Check if email/password pair matches a known user."""
-    user = _MOCK_USERS.get(email.lower())
+    """Check if email/password pair matches a known user using bcrypt."""
+    user = _USERS.get(email.lower())
     if not user:
         return False
-    return hmac.compare_digest(user["password"], _hash_password(password))
+    try:
+        return bcrypt.checkpw(password.encode(), user["password_hash"].encode())
+    except (ValueError, TypeError):
+        log.exception("bcrypt verification failed for %s", email)
+        return False
 
 
 def get_user_role(email: str) -> str:
     """Return the role for the given user email."""
-    user = _MOCK_USERS.get(email.lower())
+    user = _USERS.get(email.lower())
     return user["role"] if user else "readonly"
 
 

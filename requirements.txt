@@ -3,5 +3,6 @@ uvicorn[standard]
 httpx
 tenacity
 pydantic-settings
+bcrypt
 python-json-logger
 python-dotenv
