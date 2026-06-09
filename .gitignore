@@ -1,9 +1,33 @@
-node_modules/
-.venv/
-__pycache__/
-*.pyc
+# Environment variables (contains secrets)
 .env
-auth.db
+sn.env
+*.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyc
 *.egg-info/
 dist/
 build/
+.venv/
+.venv.venv/
+venv/
+
+# Node
+node_modules/
+
+# Database
+auth.db
+
+# Persisted dashboard state
+data/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db

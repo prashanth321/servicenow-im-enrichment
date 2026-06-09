@@ -1,0 +1,62 @@
+"""
+Application settings loaded from environment variables using pydantic-settings.
+
+All ServiceNow connection parameters, server configuration, and operational
+settings are defined here and read from a .env file or environment variables.
+"""
+
+from pathlib import Path
+
+from pydantic_settings import BaseSettings
+
+# Resolve the .env path relative to this file so it works regardless of CWD
+_ENV_FILE = Path(__file__).resolve().parent.parent / ".env"
+
+
+class Settings(BaseSettings):
+    """Central configuration for the ServiceNow IM Enrichment service.
+
+    Attributes:
+        sn_base_url: Base URL of the ServiceNow instance (e.g. https://dev12345.service-now.com).
+        sn_username: ServiceNow API username with read/write access to incidents and CMDB.
+        sn_password: ServiceNow API password (use a dedicated integration account).
+        port: Port the FastAPI server listens on.
+        polling_interval_seconds: Seconds between polling cycles when running in poll mode.
+        log_level: Python log level string (DEBUG, INFO, WARNING, ERROR, CRITICAL).
+    """
+
+    sn_base_url: str
+    sn_username: str
+    sn_password: str
+    port: int = 3000
+    polling_interval_seconds: int = 60
+    log_level: str = "INFO"
+
+    # SMTP / email settings
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_username: str = ""
+    smtp_password: str = ""
+    smtp_from_email: str = ""
+    smtp_use_tls: bool = True
+
+    # Dashboard user accounts: pipe-separated entries of email:bcrypt_hash:role
+    auth_users: str = ""
+
+    # Dedicated JWT signing secret (do NOT reuse SN credentials)
+    jwt_secret: str = ""
+
+    # CORS allowed origin for the dashboard
+    cors_origin: str = "http://localhost:3000"
+
+    # Shared secret for webhook authentication
+    webhook_secret: str = ""
+
+    model_config = {
+        "env_file": str(_ENV_FILE),
+        "env_file_encoding": "utf-8",
+    }
+
+
+# Module-level singleton so all imports share one instance
+settings = Settings()

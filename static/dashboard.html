@@ -1,0 +1,1325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Incident Manager Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        :root {
+            --bg-primary: #f8fafc;
+            --bg-secondary: #ffffff;
+            --bg-card: #ffffff;
+            --bg-hover: #f1f5f9;
+            --border: #e2e8f0;
+            --text-primary: #0f172a;
+            --text-secondary: #cbd5e1;
+            --text-muted: #94a3b8;
+            --accent-red: #ef4444;
+            --accent-orange: #f97316;
+            --accent-amber: #f59e0b;
+            --accent-green: #22c55e;
+            --accent-blue: #3b82f6;
+            --accent-purple: #a855f7;
+        }
+        body { background: var(--bg-primary); color: var(--text-primary); font-family: 'Inter', system-ui, sans-serif; }
+        .card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 0.75rem; }
+        .card-header { padding: 1rem 1.25rem; border-bottom: 1px solid var(--border); }
+        .card-body { padding: 1.25rem; }
+        .badge { padding: 0.125rem 0.625rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 600; }
+        .badge-p1 { background: #fee2e2; color: #991b1b; }
+        .badge-p2 { background: #ffedd5; color: #9a3412; }
+        .badge-p3 { background: #fef3c7; color: #92400e; }
+        .badge-p4 { background: #dbeafe; color: #1e40af; }
+        .badge-green { background: #dcfce7; color: #166534; }
+        .badge-red { background: #fee2e2; color: #991b1b; }
+        .badge-amber { background: #fef3c7; color: #92400e; }
+        .badge-blue { background: #dbeafe; color: #1e40af; }
+        .badge-gray { background: #f1f5f9; color: #cbd5e1; }
+        .btn { padding: 0.5rem 1rem; border-radius: 0.5rem; font-size: 0.875rem; font-weight: 500; cursor: pointer; transition: all 0.15s; border: none; }
+        .btn-primary { background: var(--accent-blue); color: white; }
+        .btn-primary:hover { background: #2563eb; }
+        .btn-danger { background: var(--accent-red); color: white; }
+        .btn-danger:hover { background: #dc2626; }
+        .btn-ghost { background: transparent; color: var(--text-secondary); border: 1px solid var(--border); }
+        .btn-ghost:hover { background: var(--bg-hover); }
+        .btn-sm { padding: 0.25rem 0.75rem; font-size: 0.75rem; }
+        .input { background: var(--bg-primary); border: 1px solid var(--border); color: var(--text-primary); padding: 0.5rem 0.75rem; border-radius: 0.5rem; width: 100%; font-size: 0.875rem; }
+        .input:focus { outline: none; border-color: var(--accent-blue); box-shadow: 0 0 0 2px rgba(59,130,246,0.2); }
+        textarea.input { min-height: 80px; resize: vertical; }
+        .sla-bar { height: 6px; border-radius: 3px; background: #e2e8f0; overflow: hidden; }
+        .sla-fill { height: 100%; border-radius: 3px; transition: width 0.3s; }
+        .tab { padding: 0.5rem 1rem; cursor: pointer; border-bottom: 2px solid transparent; color: var(--text-secondary); font-size: 0.875rem; }
+        .tab.active { color: var(--accent-blue); border-bottom-color: var(--accent-blue); }
+        .tab:hover { color: var(--text-primary); }
+        .grid-layout { display: grid; grid-template-columns: 320px 1fr 340px; gap: 1rem; height: calc(100vh - 160px); }
+        .panel { overflow-y: auto; max-height: 100%; }
+        .panel::-webkit-scrollbar { width: 4px; }
+        .panel::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 2px; }
+        @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
+        .pulse { animation: pulse 2s ease-in-out infinite; }
+        .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 50; }
+        .modal { background: var(--bg-card); border: 1px solid var(--border); border-radius: 0.75rem; max-width: 600px; width: 90%; max-height: 80vh; overflow-y: auto; }
+        .hidden { display: none !important; }
+        .loading { display: flex; align-items: center; justify-content: center; padding: 2rem; color: var(--text-muted); }
+        .separator { height: 1px; background: var(--border); margin: 0.75rem 0; }
+        select.input { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 0.5rem center; padding-right: 2rem; }
+    </style>
+</head>
+<body class="min-h-screen">
+
+<!-- Incident Selector Bar -->
+<div class="border-b border-[#e2e8f0] bg-white px-6 py-3 flex items-center gap-4">
+    <a href="/incidents-view" class="flex items-center gap-2 cursor-pointer hover:opacity-80" style="text-decoration:none; color:inherit;">
+        <svg class="w-6 h-6 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+        <span class="font-bold text-lg">IM Dashboard</span>
+    </a>
+    <div class="flex items-center gap-2 ml-4">
+        <label class="text-sm text-slate-600">Incident:</label>
+        <select id="incidentSelect" class="input" style="width:200px" onchange="loadDashboard()">
+            <option value="">Select incident...</option>
+        </select>
+        <button class="btn btn-ghost btn-sm" onclick="refreshIncidentList()">↻ Refresh</button>
+    </div>
+    <div id="headerInfo" class="ml-auto flex items-center gap-3 text-sm">
+        <span class="text-green-400 text-xs" title="Changes auto-sync to ServiceNow">● Auto-Sync</span>
+        <span id="userEmail" class="text-slate-600"></span>
+        <button class="btn btn-ghost btn-sm" onclick="handleLogout()">⏻ Logout</button>
+    </div>
+</div>
+
+<!-- Incident Header -->
+<div id="incidentHeader" class="px-6 py-3 bg-[#f8fafc] border-b border-[#e2e8f0] hidden">
+</div>
+
+<!-- Main 3-Column Layout -->
+<div class="px-4 py-3">
+    <div class="grid-layout" id="mainLayout">
+        <!-- Left Sidebar -->
+        <div class="panel flex flex-col gap-3">
+            <!-- SLA Clocks -->
+            <div class="card">
+                <div class="card-header flex items-center justify-between">
+                    <span class="font-semibold text-sm">⏱ SLA Clocks</span>
+                    <button class="btn btn-ghost btn-sm admin-only" onclick="showAddSLAModal()">+ Add</button>
+                </div>
+                <div class="card-body space-y-3" id="slaClocks">
+                    <div class="loading">Select an incident</div>
+                </div>
+            </div>
+            <!-- Handover -->
+            <div class="card">
+                <div class="card-header flex items-center justify-between">
+                    <span class="font-semibold text-sm">🔄 In Shift Incident Manager</span>
+                </div>
+                <div class="card-body" id="handoverPanel">
+                    <div class="loading">Select an incident</div>
+                </div>
+            </div>
+            <!-- Priority Tracker -->
+            <div class="card">
+                <div class="card-header"><span class="font-semibold text-sm">📈 Priority Escalation</span></div>
+                <div class="card-body" id="priorityTracker">
+                    <div class="loading">Select an incident</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Center Workspace -->
+        <div class="panel flex flex-col gap-3">
+            <!-- Tabs -->
+            <div class="card">
+                <div class="flex border-b border-[#e2e8f0]">
+                    <div class="tab active" data-tab="notes" onclick="switchTab('notes')">📝 Notes</div>
+                    <div class="tab" data-tab="actions" onclick="switchTab('actions')">☑ Actions</div>
+                    <div class="tab" data-tab="changes" onclick="switchTab('changes')">🔧 Changes</div>
+                    <div class="tab" data-tab="comms" onclick="switchTab('comms')">📨 Communications</div>
+                    <div class="tab" data-tab="teams" onclick="switchTab('teams')">💬 Teams</div>
+                </div>
+                <!-- Notes Tab -->
+                <div class="card-body tab-content" id="tab-notes">
+                    <div class="flex gap-2 mb-3 admin-only">
+                        <input id="noteInput" class="input" placeholder="Add a note... (Enter to submit)">
+                        <button class="btn btn-primary btn-sm" onclick="addNote()">Add</button>
+                    </div>
+                    <h4 class="text-xs font-semibold text-slate-600 uppercase mb-1">Incident Manager Notes</h4>
+                    <div id="notesList" class="space-y-2 mb-4"></div>
+                    <h4 class="text-xs font-semibold text-slate-600 uppercase mb-1">ServiceNow Notes</h4>
+                    <div id="snNotesList" class="space-y-2"></div>
+                </div>
+                <!-- Actions Tab -->
+                <div class="card-body tab-content hidden" id="tab-actions">
+                    <div class="grid grid-cols-4 gap-2 mb-3 admin-only">
+                        <input id="actionDesc" class="input" placeholder="Description">
+                        <input id="actionTeam" class="input" placeholder="Team">
+                        <input id="actionAssignee" class="input" placeholder="Assignee">
+                        <button class="btn btn-primary btn-sm" onclick="addAction()">Add</button>
+                    </div>
+                    <div id="actionsList" class="space-y-2"></div>
+                </div>
+                <!-- Changes Tab -->
+                <div class="card-body tab-content hidden" id="tab-changes">
+                    <div class="grid grid-cols-4 gap-2 mb-3 admin-only">
+                        <input id="changeDesc" class="input" placeholder="Change description">
+                        <input id="changeTeam" class="input" placeholder="Owner team">
+                        <input id="changeAssignee" class="input" placeholder="Assignee">
+                        <button class="btn btn-primary btn-sm" onclick="addChange()">Add</button>
+                    </div>
+                    <h4 class="text-xs font-semibold text-slate-600 uppercase mb-1">Manual Changes</h4>
+                    <div id="changesList" class="space-y-2 mb-4"></div>
+                    <h4 class="text-xs font-semibold text-slate-600 uppercase mb-1">Scheduled Changes (ServiceNow)</h4>
+                    <div id="snChangesList" class="space-y-2"></div>
+                </div>
+                <!-- Comms Tab -->
+                <div class="card-body tab-content hidden" id="tab-comms">
+                    <button class="btn btn-primary btn-sm mb-3 admin-only" onclick="showCommModal()">📧 Send Update</button>
+                    <div id="commsList" class="space-y-2"></div>
+                </div>
+                <!-- Teams Tab -->
+                <div class="card-body tab-content hidden" id="tab-teams">
+                    <!-- Create Group Chat -->
+                    <h4 class="text-xs font-semibold text-slate-600 uppercase mb-2">Create Group Chat</h4>
+                    <div class="flex gap-2 mb-2">
+                        <input id="teamsMeetingSubject" class="input" placeholder="Chat subject (e.g. INC bridge)" style="flex:1">
+                    </div>
+                    <!-- Add participants -->
+                    <h4 class="text-xs font-semibold text-slate-600 uppercase mb-2 mt-3">Participants</h4>
+                    <div class="flex gap-2 mb-2">
+                        <input id="teamsParticipantEmail" class="input" placeholder="Enter email address..." style="flex:1">
+                        <button class="btn btn-ghost btn-sm" onclick="addTeamsParticipant()">+ Add</button>
+                    </div>
+                    <!-- Quick add from stakeholders -->
+                    <div class="flex flex-wrap gap-1 mb-2" id="teamsQuickAddStakeholders"></div>
+                    <!-- Participant list -->
+                    <div id="teamsParticipantList" class="space-y-1 mb-3">
+                        <div class="text-sm text-slate-500">No participants added yet</div>
+                    </div>
+                    <div class="flex gap-2">
+                        <button class="btn btn-primary" onclick="createTeamsGroupChat()">💬 Create Group Chat</button>
+                        <button class="btn btn-ghost btn-sm" onclick="clearTeamsParticipants()">Clear All</button>
+                    </div>
+                    <div class="separator"></div>
+                    <!-- Direct Chat / Call -->
+                    <h4 class="text-xs font-semibold text-slate-600 uppercase mb-2">Direct Chat / Call</h4>
+                    <div class="flex gap-2 mb-2">
+                        <input id="teamsQuickEmail" class="input" placeholder="Enter email address..." style="flex:1">
+                        <button class="btn btn-ghost btn-sm" onclick="teamsChat(document.getElementById('teamsQuickEmail').value)" title="Start Chat">💬 Chat</button>
+                        <button class="btn btn-ghost btn-sm" onclick="teamsCall(document.getElementById('teamsQuickEmail').value)" title="Start Call">📞 Call</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Sidebar -->
+        <div class="panel flex flex-col gap-3">
+            <!-- Stakeholders -->
+            <div class="card">
+                <div class="card-header flex items-center justify-between">
+                    <span class="font-semibold text-sm">👥 Stakeholders</span>
+                    <div class="flex items-center gap-1">
+                        <button class="btn btn-ghost btn-sm" onclick="teamsGroupChatAllStakeholders()" title="Teams Group Chat">💬 Teams</button>
+                        <button class="btn btn-ghost btn-sm admin-only" onclick="showAddStakeholderModal()">+ Add</button>
+                    </div>
+                </div>
+                <div class="card-body space-y-2" id="stakeholdersList">
+                    <div class="text-sm text-slate-500">No stakeholders</div>
+                </div>
+            </div>
+            <!-- Vendor -->
+            <div class="card">
+                <div class="card-header"><span class="font-semibold text-sm">🏢 Vendor</span></div>
+                <div class="card-body text-sm" id="vendorPanel">
+                    <div class="loading">Select an incident</div>
+                </div>
+            </div>
+            <!-- Resolution -->
+            <div class="card">
+                <div class="card-header flex items-center justify-between">
+                    <span class="font-semibold text-sm">✅ Resolution</span>
+                </div>
+                <div class="card-body admin-only" id="resolutionPanel">
+                    <div class="flex items-center gap-2 mb-2">
+                        <label class="text-sm text-slate-600 flex items-center gap-1">
+                            <input type="checkbox" id="confirmResolve" onchange="toggleResolveBtn()">
+                            I confirm this incident is fully resolved
+                        </label>
+                    </div>
+                    <button class="btn btn-danger w-full" onclick="showResolveModal()" id="resolveBtn" disabled>Resolve Incident</button>
+                    <p class="text-xs text-slate-500 mt-1">Leave unchecked to resolve later after fixing errors</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modals -->
+<!-- Communication Modal -->
+<div id="commModal" class="modal-overlay hidden" onclick="if(event.target===this)this.classList.add('hidden')">
+    <div class="modal">
+        <div class="card-header flex items-center justify-between">
+            <span class="font-semibold">Send Communication</span>
+            <button class="btn btn-ghost btn-sm" onclick="document.getElementById('commModal').classList.add('hidden')">✕</button>
+        </div>
+        <div class="card-body space-y-3">
+            <select id="commType" class="input" onchange="loadTemplate()">
+                <option value="status_update">Status Update</option>
+                <option value="customer_impact">Customer Impact</option>
+                <option value="escalation">Escalation</option>
+                <option value="resolution_notice">Resolution Notice</option>
+            </select>
+            <input id="commSubject" class="input" placeholder="Subject">
+            <textarea id="commBody" class="input" rows="6" placeholder="Message body"></textarea>
+            <div>
+                <label class="text-sm text-slate-600 mb-1 block">Recipients</label>
+                <div id="contactPickerArea" class="mb-2">
+                    <div class="flex gap-2 mb-2">
+                        <select id="contactSelect" class="input" style="flex:1">
+                            <option value="">-- Select from contacts --</option>
+                        </select>
+                        <button class="btn btn-ghost btn-sm" onclick="addSelectedContact()">+ Add</button>
+                    </div>
+                    <div id="distListArea" class="flex flex-wrap gap-1 mb-2"></div>
+                </div>
+                <input id="commRecipients" class="input" placeholder="Recipients (comma-separated emails)">
+                <p class="text-xs text-slate-500 mt-1">Select from contacts above or type emails manually</p>
+            </div>
+            <div class="flex justify-end gap-2">
+                <button class="btn btn-ghost" onclick="document.getElementById('commModal').classList.add('hidden')">Cancel</button>
+                <button class="btn btn-primary" onclick="sendComm()">Send</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add Stakeholder Modal -->
+<div id="stakeholderModal" class="modal-overlay hidden" onclick="if(event.target===this)this.classList.add('hidden')">
+    <div class="modal">
+        <div class="card-header flex items-center justify-between">
+            <span class="font-semibold">Add Stakeholder</span>
+            <button class="btn btn-ghost btn-sm" onclick="document.getElementById('stakeholderModal').classList.add('hidden')">✕</button>
+        </div>
+        <div class="card-body space-y-3">
+            <input id="shName" class="input" placeholder="Name">
+            <input id="shRole" class="input" placeholder="Role">
+            <input id="shTeam" class="input" placeholder="Team">
+            <input id="shEmail" class="input" placeholder="Email">
+            <div class="flex justify-end gap-2">
+                <button class="btn btn-ghost" onclick="document.getElementById('stakeholderModal').classList.add('hidden')">Cancel</button>
+                <button class="btn btn-primary" onclick="addStakeholder()">Add</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add SLA Modal -->
+<div id="slaModal" class="modal-overlay hidden" onclick="if(event.target===this)this.classList.add('hidden')">
+    <div class="modal">
+        <div class="card-header flex items-center justify-between">
+            <span class="font-semibold">Add SLA Clock</span>
+            <button class="btn btn-ghost btn-sm" onclick="document.getElementById('slaModal').classList.add('hidden')">✕</button>
+        </div>
+        <div class="card-body space-y-3">
+            <input id="slaLabel" class="input" placeholder="Label (e.g. Customer Update SLA)">
+            <input id="slaMinutes" class="input" type="number" placeholder="Target minutes">
+            <div class="flex justify-end gap-2">
+                <button class="btn btn-ghost" onclick="document.getElementById('slaModal').classList.add('hidden')">Cancel</button>
+                <button class="btn btn-primary" onclick="addSLAClock()">Add</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Handover Modal -->
+<div id="handoverModal" class="modal-overlay hidden" onclick="if(event.target===this)this.classList.add('hidden')">
+    <div class="modal">
+        <div class="card-header flex items-center justify-between">
+            <span class="font-semibold">In Shift Incident Manager Checklist</span>
+            <button class="btn btn-ghost btn-sm" onclick="document.getElementById('handoverModal').classList.add('hidden')">✕</button>
+        </div>
+        <div class="card-body space-y-3">
+            <p class="text-sm text-slate-600 mb-2">Complete all items before transferring ownership:</p>
+            <label class="flex items-center gap-2 text-sm"><input type="checkbox" id="hc1"> Current status reviewed with incoming manager</label>
+            <label class="flex items-center gap-2 text-sm"><input type="checkbox" id="hc2"> Open action items transferred</label>
+            <label class="flex items-center gap-2 text-sm"><input type="checkbox" id="hc3"> Stakeholder communications shared</label>
+            <label class="flex items-center gap-2 text-sm"><input type="checkbox" id="hc4"> Vendor status confirmed</label>
+            <label class="flex items-center gap-2 text-sm"><input type="checkbox" id="hc5"> Escalation points identified</label>
+            <div class="separator"></div>
+            <div class="relative">
+                <input id="handoverTarget" class="input" placeholder="Search ServiceNow user..." oninput="searchHandoverUser(this.value)" autocomplete="off">
+                <div id="handoverUserResults" class="absolute left-0 right-0 top-full bg-white border border-[#e2e8f0] rounded-lg shadow-lg max-h-40 overflow-y-auto z-50 hidden"></div>
+                <div id="handoverUserValid" class="text-xs mt-1 hidden"></div>
+            </div>
+            <div class="flex justify-end gap-2">
+                <button class="btn btn-ghost" onclick="document.getElementById('handoverModal').classList.add('hidden')">Cancel</button>
+                <button class="btn btn-primary" id="handoverConfirmBtn" onclick="doHandover()" disabled>Confirm Transfer</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Resolve Modal -->
+<div id="resolveModal" class="modal-overlay hidden" onclick="if(event.target===this)this.classList.add('hidden')">
+    <div class="modal">
+        <div class="card-header flex items-center justify-between">
+            <span class="font-semibold">Resolve Incident</span>
+            <button class="btn btn-ghost btn-sm" onclick="document.getElementById('resolveModal').classList.add('hidden')">✕</button>
+        </div>
+        <div class="card-body space-y-3">
+            <div>
+                <label class="text-sm text-slate-600">Resolution Notes</label>
+                <textarea id="resolveNotes" class="input" rows="4" placeholder="Describe how the incident was resolved..."></textarea>
+            </div>
+            <div>
+                <label class="text-sm text-slate-600">Close Code</label>
+                <select id="resolveCode" class="input">
+                    <option value="Solved (Permanently)">Solved (Permanently)</option>
+                    <option value="Solved (Workaround)">Solved (Workaround)</option>
+                    <option value="Not Solved (Not Reproducible)">Not Solved (Not Reproducible)</option>
+                    <option value="Closed/Resolved by Caller">Closed/Resolved by Caller</option>
+                </select>
+            </div>
+            <button class="btn btn-ghost w-full" onclick="generateSummary()">🤖 Generate AI Summary</button>
+            <div class="mt-2 p-3 rounded-lg bg-[#f1f5f9] border border-[#e2e8f0]">
+                <label class="block text-xs text-slate-600 mb-1">Upload Meeting Transcript</label>
+                <input type="file" id="transcriptFile" accept=".txt,.md,.csv,.log,.vtt,.srt" class="block w-full text-xs text-slate-600 file:mr-3 file:py-1 file:px-3 file:rounded file:border-0 file:text-xs file:font-medium file:bg-[#e2e8f0] file:text-slate-700 file:cursor-pointer hover:file:bg-[#cbd5e1]">
+                <p class="text-[10px] text-slate-500 mt-1">Or paste transcript below:</p>
+                <textarea id="transcriptText" class="input mt-1" rows="3" placeholder="Paste meeting transcript here..."></textarea>
+            </div>
+            <div id="aiSummary" class="hidden bg-[#f1f5f9] p-3 rounded-lg text-sm space-y-3">
+                <div class="flex items-center justify-between">
+                    <span class="font-medium text-green-400">AI Summary Generated</span>
+                    <span class="text-xs text-slate-500">You can edit below before resolving</span>
+                </div>
+                <div>
+                    <label class="text-xs text-slate-600">Summary</label>
+                    <textarea id="aiSummaryText" class="input mt-1" rows="3"></textarea>
+                </div>
+                <div>
+                    <label class="text-xs text-slate-600">Root Cause</label>
+                    <textarea id="aiRootCause" class="input mt-1" rows="2"></textarea>
+                </div>
+                <div>
+                    <label class="text-xs text-slate-600">Actions Taken</label>
+                    <textarea id="aiActionsTaken" class="input mt-1" rows="3"></textarea>
+                </div>
+                <div>
+                    <label class="text-xs text-slate-600">Problem Ticket</label>
+                    <input id="aiProblemTicket" class="input mt-1">
+                </div>
+            </div>
+            <div class="flex justify-end gap-2">
+                <button class="btn btn-ghost" onclick="document.getElementById('resolveModal').classList.add('hidden')">Cancel</button>
+                <button class="btn btn-danger" onclick="resolveIncident()">Resolve in ServiceNow</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// ── HTML Escaping ──
+function escapeHtml(str) {
+    if (!str) return '';
+    const div = document.createElement('div');
+    div.appendChild(document.createTextNode(String(str)));
+    return div.innerHTML;
+}
+
+// ── Auth Guard ──
+let userRole = 'readonly';
+(function checkAuth() {
+    const email = localStorage.getItem('im_user_email');
+    if (!email) {
+        window.location.href = '/login';
+        return;
+    }
+    userRole = localStorage.getItem('im_user_role') || 'readonly';
+    const emailEl = document.getElementById('userEmail');
+    if (emailEl) emailEl.textContent = email;
+    // Hide edit controls for readonly users
+    if (userRole === 'readonly') {
+        document.querySelectorAll('.admin-only').forEach(el => el.style.display = 'none');
+    }
+})();
+
+function handleLogout() {
+    fetch('/api/logout', { method: 'POST', credentials: 'same-origin' });
+    localStorage.removeItem('im_user_email');
+    localStorage.removeItem('im_user_role');
+    window.location.href = '/login';
+}
+
+const API = '';
+let currentIncident = null;
+let dashboardData = null;
+let slaInterval = null;
+
+// ── Helpers ──
+async function api(path, opts = {}) {
+    const res = await fetch(API + path, {
+        headers: { 'Content-Type': 'application/json', ...opts.headers },
+        credentials: 'same-origin',
+        ...opts,
+    });
+    if (res.status === 401) { handleLogout(); return; }
+    if (!res.ok && res.status !== 204) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || res.statusText);
+    }
+    if (res.status === 204) return null;
+    return res.json();
+}
+
+function timeAgo(dateStr) {
+    if (!dateStr) return '';
+    const d = new Date(dateStr);
+    const now = new Date();
+    const diff = Math.floor((now - d) / 60000);
+    if (diff < 1) return 'just now';
+    if (diff < 60) return diff + 'm ago';
+    if (diff < 1440) return Math.floor(diff / 60) + 'h ago';
+    return Math.floor(diff / 1440) + 'd ago';
+}
+
+function fmtSeconds(s) {
+    const neg = s < 0;
+    s = Math.abs(s);
+    const m = Math.floor(s / 60);
+    const sec = s % 60;
+    return (neg ? '-' : '') + m + ':' + String(sec).padStart(2, '0');
+}
+
+function priorityBadge(p) {
+    const cls = { '1': 'badge-p1', '2': 'badge-p2', '3': 'badge-p3', '4': 'badge-p4' }[p] || 'badge-gray';
+    return `<span class="badge ${cls}">P${p}</span>`;
+}
+
+function stateBadge(s) {
+    const labels = { 'new': 'New', 'in_progress': 'In Progress', 'on_hold': 'On Hold', 'resolved': 'Resolved', 'closed': 'Closed' };
+    const cls = { 'new': 'badge-blue', 'in_progress': 'badge-green', 'on_hold': 'badge-amber', 'resolved': 'badge-gray', 'closed': 'badge-gray' }[s] || 'badge-gray';
+    return `<span class="badge ${cls}">${labels[s] || s}</span>`;
+}
+
+// ── Load active P2 incidents into the selector ──
+async function refreshIncidentList() {
+    try {
+        const res = await fetch(API + '/incidents/list/active-p2');
+        if (res.status === 404) {
+            // Fallback: use the ServiceNow query via a custom endpoint we'll handle
+            const r2 = await fetch(API + '/health');
+            if (r2.ok) {
+                // Try loading known incidents
+                const sel = document.getElementById('incidentSelect');
+                if (sel.options.length <= 1) {
+                    ['INC0000049','INC0000044','INC0000027','INC0000019','INC0010004'].forEach(n => {
+                        const opt = document.createElement('option');
+                        opt.value = n; opt.text = n;
+                        sel.add(opt);
+                    });
+                }
+            }
+            return;
+        }
+        const data = await res.json();
+        const sel = document.getElementById('incidentSelect');
+        sel.innerHTML = '<option value="">Select incident...</option>';
+        data.forEach(inc => {
+            const opt = document.createElement('option');
+            opt.value = inc.number; opt.text = `${inc.number} — ${inc.short_description || ''}`.substring(0, 60);
+            sel.add(opt);
+        });
+    } catch {
+        // Fallback hardcoded P2 list
+        const sel = document.getElementById('incidentSelect');
+        if (sel.options.length <= 1) {
+            ['INC0000049','INC0000044','INC0000027','INC0000019','INC0010004'].forEach(n => {
+                const opt = document.createElement('option');
+                opt.value = n; opt.text = n;
+                sel.add(opt);
+            });
+        }
+    }
+}
+
+// ── Load full dashboard ──
+async function loadDashboard() {
+    const num = document.getElementById('incidentSelect').value;
+    if (!num) return;
+    currentIncident = num;
+
+    try {
+        dashboardData = await api(`/incidents/${num}/dashboard`);
+        renderHeader(dashboardData.incident);
+        renderSLAClocks(dashboardData.sla_clocks);
+        renderStakeholders(dashboardData.stakeholders);
+        renderTeamsStakeholders(dashboardData.stakeholders);
+        renderComms(dashboardData.communications);
+        renderNotes(dashboardData.notes);
+        renderActions(dashboardData.action_items);
+        renderChanges(dashboardData.changes);
+        renderVendor(dashboardData.vendor_info);
+        renderPriority(dashboardData.priority_history);
+        renderHandover();
+        renderResolution(dashboardData.resolution);
+        const resolveBtn = document.getElementById('resolveBtn');
+        const confirmBox = document.getElementById('confirmResolve');
+        if (resolveBtn && confirmBox) {
+            confirmBox.checked = false;
+            resolveBtn.disabled = true;
+        }
+        document.getElementById('incidentHeader').classList.remove('hidden');
+        startSLATicker();
+        // Load ServiceNow notes and scheduled changes in background
+        loadSNNotes();
+        loadScheduledChanges();
+        // Re-apply role restrictions after dynamic render
+        if (userRole === 'readonly') {
+            document.querySelectorAll('.admin-only').forEach(el => el.style.display = 'none');
+        }
+    } catch (e) {
+        alert('Failed to load dashboard: ' + e.message);
+    }
+}
+
+// ── Render: Incident Header ──
+function renderHeader(inc) {
+    const h = document.getElementById('incidentHeader');
+    h.innerHTML = `
+        <div class="flex items-center justify-between flex-wrap gap-3">
+            <div class="flex items-center gap-3">
+                <span class="text-xl font-bold">${inc.number}</span>
+                ${priorityBadge(inc.priority)}
+                ${stateBadge(inc.state)}
+            </div>
+            <div class="text-sm text-slate-600">
+                ${inc.assignment_group ? `<span class="mr-3">👥 ${escapeHtml(inc.assignment_group)}</span>` : ''}
+                ${inc.assigned_to ? `<span>👤 ${escapeHtml(inc.assigned_to)}</span>` : ''}
+            </div>
+        </div>
+        <p class="text-sm mt-1">${escapeHtml(inc.short_description)}</p>
+        ${inc.description ? `<p class="text-xs text-slate-600 mt-1">${escapeHtml(inc.description)}</p>` : ''}
+        <div class="flex flex-wrap items-center gap-2 mt-2">
+            ${inc.service_offering ? `<span class="badge badge-blue">Service Offering: ${escapeHtml(inc.service_offering)}</span>` : ''}
+            ${inc.ci_name ? `<span class="badge badge-blue">CI: ${escapeHtml(inc.ci_name)}</span>` : ''}
+            ${inc.business_impact ? `<span class="badge ${inc.business_impact === 'Low' ? 'badge-green' : inc.business_impact === 'Medium' ? 'badge-amber' : 'badge-red'}">Impact: ${escapeHtml(inc.business_impact)}</span>` : ''}
+        </div>
+    `;
+    document.getElementById('headerInfo').innerHTML = `
+        <span class="text-slate-600">${inc.assigned_to ? 'Assigned: ' + escapeHtml(inc.assigned_to) : 'Unassigned'}</span>
+        <span class="text-green-400 text-xs" title="Changes auto-sync to ServiceNow">● Auto-Sync</span>
+        <span id="userEmail" class="text-slate-600">${escapeHtml(localStorage.getItem('im_user_email') || '')}</span>
+        <button class="btn btn-ghost btn-sm" onclick="handleLogout()">⏻ Logout</button>
+    `;
+}
+
+// ── Render: SLA Clocks ──
+function renderSLAClocks(clocks) {
+    const el = document.getElementById('slaClocks');
+    if (!clocks || !clocks.length) { el.innerHTML = '<div class="text-sm text-slate-500">No SLA clocks</div>'; return; }
+    el.innerHTML = clocks.map(c => {
+        const pct = Math.max(0, Math.min(100, (c.remaining_seconds / (c.target_minutes * 60)) * 100));
+        const breached = c.status === 'breached' || c.remaining_seconds <= 0;
+        const paused = c.status === 'paused';
+        const color = breached ? 'bg-red-500' : pct < 25 ? 'bg-amber-500' : 'bg-green-500';
+        return `
+            <div class="p-2 rounded-lg bg-[#f1f5f9] ${breached ? 'pulse' : ''}">
+                <div class="flex items-center justify-between mb-1">
+                    <span class="text-xs font-medium">${escapeHtml(c.label)}</span>
+                    <span class="text-xs font-mono ${breached ? 'text-red-400' : 'text-slate-700'}" id="sla-time-${c.id}">${fmtSeconds(c.remaining_seconds)}</span>
+                </div>
+                <div class="sla-bar">
+                    <div class="sla-fill ${color}" style="width:${pct}%" id="sla-bar-${c.id}"></div>
+                </div>
+                <div class="flex justify-between mt-1">
+                    <span class="badge ${breached ? 'badge-red' : paused ? 'badge-amber' : 'badge-green'} text-[10px]">${breached ? 'BREACHED' : paused ? 'PAUSED' : 'RUNNING'}</span>
+                    <div class="flex gap-1">
+                        ${c.status === 'running' ? `<button class="text-[10px] text-slate-600 hover:text-white" onclick="toggleSLA('${c.id}','paused')">⏸</button>` : ''}
+                        ${c.status === 'paused' ? `<button class="text-[10px] text-slate-600 hover:text-white" onclick="toggleSLA('${c.id}','running')">▶</button>` : ''}
+                        <button class="text-[10px] text-slate-600 hover:text-red-400" onclick="deleteSLA('${c.id}')">✕</button>
+                    </div>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+function startSLATicker() {
+    if (slaInterval) clearInterval(slaInterval);
+    slaInterval = setInterval(async () => {
+        if (!currentIncident) return;
+        try {
+            const clocks = await api(`/incidents/${currentIncident}/sla/tick?seconds=1`, { method: 'POST' });
+            // Update in-place
+            clocks.forEach(c => {
+                const timeEl = document.getElementById('sla-time-' + c.id);
+                if (timeEl) timeEl.textContent = fmtSeconds(c.remaining_seconds);
+                const barEl = document.getElementById('sla-bar-' + c.id);
+                if (barEl) {
+                    const pct = Math.max(0, Math.min(100, (c.remaining_seconds / (c.target_minutes * 60)) * 100));
+                    barEl.style.width = pct + '%';
+                }
+            });
+        } catch {}
+    }, 1000);
+}
+
+async function toggleSLA(id, status) {
+    await api(`/incidents/${currentIncident}/sla/${id}?status=${status}`, { method: 'PATCH' });
+    const clocks = await api(`/incidents/${currentIncident}/sla`);
+    renderSLAClocks(clocks);
+}
+async function deleteSLA(id) {
+    await api(`/incidents/${currentIncident}/sla/${id}`, { method: 'DELETE' });
+    const clocks = await api(`/incidents/${currentIncident}/sla`);
+    renderSLAClocks(clocks);
+}
+function showAddSLAModal() { document.getElementById('slaModal').classList.remove('hidden'); }
+async function addSLAClock() {
+    const label = document.getElementById('slaLabel').value;
+    const mins = parseInt(document.getElementById('slaMinutes').value);
+    if (!label || !mins) return;
+    await api(`/incidents/${currentIncident}/sla`, { method: 'POST', body: JSON.stringify({ label, target_minutes: mins }) });
+    document.getElementById('slaModal').classList.add('hidden');
+    const clocks = await api(`/incidents/${currentIncident}/sla`);
+    renderSLAClocks(clocks);
+}
+
+// ── Render: Stakeholders ──
+function renderStakeholders(list) {
+    const el = document.getElementById('stakeholdersList');
+    if (!list || !list.length) { el.innerHTML = '<div class="text-sm text-slate-500">No stakeholders added</div>'; return; }
+    el.innerHTML = list.map(s => `
+        <div class="flex items-center justify-between p-2 rounded bg-[#f1f5f9]">
+            <div>
+                <div class="text-sm font-medium">${escapeHtml(s.name)}</div>
+                <div class="text-xs text-slate-600">${escapeHtml(s.role)}${s.team ? ' · ' + escapeHtml(s.team) : ''}</div>
+                ${s.email ? `<div class="text-xs text-slate-500">${escapeHtml(s.email)}</div>` : ''}
+            </div>
+            <div class="flex items-center gap-1">
+                ${s.email ? `
+                    <button class="btn btn-ghost btn-sm" title="Teams Chat" onclick="teamsChat('${s.email}')">💬</button>
+                    <button class="btn btn-ghost btn-sm" title="Teams Call" onclick="teamsCall('${s.email}')">📞</button>
+                ` : ''}
+                <button class="text-xs text-slate-500 hover:text-red-400" onclick="removeStakeholder('${s.id}')">✕</button>
+            </div>
+        </div>
+    `).join('');
+}
+function showAddStakeholderModal() { document.getElementById('stakeholderModal').classList.remove('hidden'); }
+
+// ── Microsoft Teams Integration ──
+function teamsChat(email) {
+    if (!email) { alert('No email available for this stakeholder'); return; }
+    const msg = currentIncident ? `Regarding incident ${currentIncident}` : '';
+    window.open(`https://teams.microsoft.com/l/chat/0/0?users=${encodeURIComponent(email)}&message=${encodeURIComponent(msg)}`, '_blank');
+}
+function teamsCall(email) {
+    if (!email) { alert('No email available for this stakeholder'); return; }
+    window.open(`https://teams.microsoft.com/l/call/0/0?users=${encodeURIComponent(email)}`, '_blank');
+}
+function teamsGroupChat(emails) {
+    if (!emails || !emails.length) { alert('No recipients selected'); return; }
+    const msg = currentIncident ? `Incident bridge: ${currentIncident}` : '';
+    window.open(`https://teams.microsoft.com/l/chat/0/0?users=${emails.map(e => encodeURIComponent(e)).join(',')}&message=${encodeURIComponent(msg)}`, '_blank');
+}
+function teamsGroupChatAllStakeholders() {
+    if (!dashboardData || !dashboardData.stakeholders) { alert('No stakeholders loaded'); return; }
+    const emails = dashboardData.stakeholders.filter(s => s.email).map(s => s.email);
+    if (!emails.length) { alert('No stakeholders have email addresses'); return; }
+    teamsGroupChat(emails);
+}
+// ── Teams Group Chat Builder ──
+let teamsParticipants = [];
+
+function renderTeamsStakeholders(list) {
+    const el = document.getElementById('teamsQuickAddStakeholders');
+    if (!el) return;
+    if (!list || !list.length) { el.innerHTML = ''; return; }
+    el.innerHTML = '<span class="text-xs text-slate-500 mr-1">Quick add:</span>' + list.filter(s => s.email).map(s => `
+        <button class="badge badge-blue cursor-pointer hover:opacity-80" onclick="addTeamsParticipantByEmail('${s.email}', '${escapeHtml(s.name)}')" title="Add ${escapeHtml(s.name)}">${escapeHtml(s.name)}</button>
+    `).join('');
+}
+
+function addTeamsParticipant() {
+    const input = document.getElementById('teamsParticipantEmail');
+    const email = input.value.trim();
+    if (!email) return;
+    if (teamsParticipants.find(p => p.email === email)) { alert('Already added'); return; }
+    teamsParticipants.push({ email, name: email });
+    input.value = '';
+    renderTeamsParticipantList();
+}
+
+function addTeamsParticipantByEmail(email, name) {
+    if (teamsParticipants.find(p => p.email === email)) return;
+    teamsParticipants.push({ email, name });
+    renderTeamsParticipantList();
+}
+
+function removeTeamsParticipant(email) {
+    teamsParticipants = teamsParticipants.filter(p => p.email !== email);
+    renderTeamsParticipantList();
+}
+
+function clearTeamsParticipants() {
+    teamsParticipants = [];
+    renderTeamsParticipantList();
+}
+
+function renderTeamsParticipantList() {
+    const el = document.getElementById('teamsParticipantList');
+    if (!teamsParticipants.length) { el.innerHTML = '<div class="text-sm text-slate-500">No participants added yet</div>'; return; }
+    el.innerHTML = teamsParticipants.map(p => `
+        <div class="flex items-center justify-between p-2 rounded bg-[#f1f5f9]">
+            <div>
+                <span class="text-sm font-medium">${escapeHtml(p.name)}</span>
+                ${p.name !== p.email ? `<span class="text-xs text-slate-500 ml-1">${escapeHtml(p.email)}</span>` : ''}
+            </div>
+            <button class="text-xs text-slate-500 hover:text-red-400" onclick="removeTeamsParticipant('${p.email}')">✕</button>
+        </div>
+    `).join('');
+}
+
+function createTeamsGroupChat() {
+    if (!teamsParticipants.length) { alert('Add at least one participant'); return; }
+    const subject = document.getElementById('teamsMeetingSubject').value.trim() || (currentIncident ? `Incident bridge: ${currentIncident}` : 'Group Chat');
+    const emails = teamsParticipants.map(p => p.email);
+    const url = `https://teams.microsoft.com/l/chat/0/0?users=${emails.map(e => encodeURIComponent(e)).join(',')}&topicName=${encodeURIComponent(subject)}&message=${encodeURIComponent(subject)}`;
+    window.open(url, '_blank');
+}
+
+async function addStakeholder() {
+    const data = { name: document.getElementById('shName').value, role: document.getElementById('shRole').value, team: document.getElementById('shTeam').value, email: document.getElementById('shEmail').value };
+    if (!data.name) return;
+    await api(`/incidents/${currentIncident}/stakeholders`, { method: 'POST', body: JSON.stringify(data) });
+    document.getElementById('stakeholderModal').classList.add('hidden');
+    const list = await api(`/incidents/${currentIncident}/stakeholders`);
+    renderStakeholders(list);
+    renderTeamsStakeholders(list);
+}
+async function removeStakeholder(id) {
+    await api(`/incidents/${currentIncident}/stakeholders/${id}`, { method: 'DELETE' });
+    const list = await api(`/incidents/${currentIncident}/stakeholders`);
+    renderStakeholders(list);
+    renderTeamsStakeholders(list);
+}
+
+// ── Render: Communications ──
+function renderComms(list) {
+    const el = document.getElementById('commsList');
+    if (!list || !list.length) { el.innerHTML = '<div class="text-sm text-slate-500">No communications sent</div>'; return; }
+    el.innerHTML = list.map(c => `
+        <div class="p-2 rounded bg-[#f1f5f9]">
+            <div class="flex items-center justify-between">
+                <span class="text-sm font-medium">${escapeHtml(c.subject)}</span>
+                <span class="text-xs text-slate-500">${timeAgo(c.sent_at)}</span>
+            </div>
+            <div class="text-xs text-slate-600 mt-1">${escapeHtml(c.comm_type)} · ${escapeHtml(c.sent_by)}</div>
+        </div>
+    `).join('');
+}
+function showCommModal() {
+    document.getElementById('commModal').classList.remove('hidden');
+    loadTemplate();
+    loadContacts();
+}
+
+let _contactsCache = null;
+async function loadContacts() {
+    try {
+        if (!_contactsCache) {
+            _contactsCache = await api('/contacts');
+        }
+        const sel = document.getElementById('contactSelect');
+        // Clear previous options (keep first)
+        sel.innerHTML = '<option value="">-- Select from contacts --</option>';
+        // Add individual contacts
+        if (_contactsCache.contacts) {
+            const grp = document.createElement('optgroup');
+            grp.label = 'Contacts';
+            _contactsCache.contacts.forEach(c => {
+                const opt = document.createElement('option');
+                opt.value = c.email;
+                opt.textContent = `${c.name} (${c.role}) — ${c.email}`;
+                grp.appendChild(opt);
+            });
+            sel.appendChild(grp);
+        }
+        // Render distribution list buttons
+        const dlArea = document.getElementById('distListArea');
+        dlArea.innerHTML = '';
+        if (_contactsCache.distribution_lists) {
+            _contactsCache.distribution_lists.forEach(dl => {
+                const btn = document.createElement('button');
+                btn.className = 'btn btn-ghost btn-sm';
+                btn.textContent = `📋 ${dl.name}`;
+                btn.title = dl.emails.join(', ');
+                btn.onclick = () => addDistList(dl.emails);
+                dlArea.appendChild(btn);
+            });
+        }
+    } catch (e) {
+        console.warn('Could not load contacts:', e.message);
+    }
+}
+function addSelectedContact() {
+    const sel = document.getElementById('contactSelect');
+    const email = sel.value;
+    if (!email) return;
+    const inp = document.getElementById('commRecipients');
+    const current = inp.value.split(',').map(s => s.trim()).filter(Boolean);
+    if (!current.includes(email)) {
+        current.push(email);
+        inp.value = current.join(', ');
+    }
+    sel.value = '';
+}
+function addDistList(emails) {
+    const inp = document.getElementById('commRecipients');
+    const current = inp.value.split(',').map(s => s.trim()).filter(Boolean);
+    emails.forEach(e => { if (!current.includes(e)) current.push(e); });
+    inp.value = current.join(', ');
+}
+
+function toggleResolveBtn() {
+    const btn = document.getElementById('resolveBtn');
+    const cb = document.getElementById('confirmResolve');
+    if (btn && cb) btn.disabled = !cb.checked;
+}
+async function loadTemplate() {
+    if (!currentIncident) return;
+    const type = document.getElementById('commType').value;
+    try {
+        const tpl = await api(`/incidents/${currentIncident}/comms/template?comm_type=${type}`);
+        document.getElementById('commSubject').value = tpl.subject;
+        document.getElementById('commBody').value = tpl.body;
+    } catch {}
+}
+async function sendComm() {
+    const data = {
+        comm_type: document.getElementById('commType').value,
+        subject: document.getElementById('commSubject').value,
+        body: document.getElementById('commBody').value,
+        recipients: document.getElementById('commRecipients').value.split(',').map(s => s.trim()).filter(Boolean),
+    };
+    await api(`/incidents/${currentIncident}/comms`, { method: 'POST', body: JSON.stringify(data) });
+    document.getElementById('commModal').classList.add('hidden');
+    const list = await api(`/incidents/${currentIncident}/comms`);
+    renderComms(list);
+}
+
+// ── Render: Notes ──
+function renderNotes(list) {
+    const el = document.getElementById('notesList');
+    if (!list || !list.length) { el.innerHTML = '<div class="text-sm text-slate-500">No incident manager notes yet</div>'; return; }
+    const deleteBtn = userRole === 'admin' ? (id) => `<button class="text-xs text-slate-500 hover:text-red-400 ml-2" onclick="deleteNote('${id}')">✕</button>` : () => '';
+    el.innerHTML = list.map(n => `
+        <div class="p-2 rounded bg-[#f1f5f9] flex justify-between">
+            <div>
+                <p class="text-sm">${escapeHtml(n.content)}</p>
+                <span class="text-xs text-slate-500">${n.author ? escapeHtml(n.author) + ' · ' : ''}${timeAgo(n.created_at)}</span>
+            </div>
+            ${deleteBtn(n.id)}
+        </div>
+    `).join('');
+}
+
+function renderSNNotes(list) {
+    const el = document.getElementById('snNotesList');
+    if (!list || !list.length) { el.innerHTML = '<div class="text-sm text-slate-500">No ServiceNow notes found</div>'; return; }
+    el.innerHTML = list.map(n => {
+        // Strip HTML tags that SN sometimes includes in journal entries
+        const content = n.content.replace(/<[^>]*>/g, '').trim();
+        const sourceLabel = n.source === 'work_notes' ? '🔧 Work Note' : '💬 Comment';
+        return `
+            <div class="p-2 rounded bg-[#f1f5f9] border-l-2 ${n.source === 'work_notes' ? 'border-blue-500' : 'border-green-500'}">
+                <div class="flex items-center gap-2 mb-1">
+                    <span class="text-xs font-medium ${n.source === 'work_notes' ? 'text-blue-400' : 'text-green-400'}">${sourceLabel}</span>
+                    <span class="text-xs text-slate-500">${n.author} · ${n.created_at ? new Date(n.created_at).toLocaleString() : ''}</span>
+                </div>
+                <p class="text-sm text-slate-700">${escapeHtml(content.substring(0, 500))}${content.length > 500 ? '...' : ''}</p>
+            </div>
+        `;
+    }).join('');
+}
+
+async function loadSNNotes() {
+    if (!currentIncident) return;
+    try {
+        const snNotes = await api(`/incidents/${currentIncident}/notes/servicenow`);
+        renderSNNotes(snNotes);
+    } catch (e) {
+        document.getElementById('snNotesList').innerHTML = '<div class="text-sm text-slate-500">Could not fetch ServiceNow notes</div>';
+    }
+}
+
+async function addNote() {
+    const input = document.getElementById('noteInput');
+    if (!input.value.trim()) return;
+    await api(`/incidents/${currentIncident}/notes`, { method: 'POST', body: JSON.stringify({ content: input.value, author: 'IM Dashboard' }) });
+    input.value = '';
+    const list = await api(`/incidents/${currentIncident}/notes`);
+    renderNotes(list);
+}
+async function deleteNote(id) {
+    await api(`/incidents/${currentIncident}/notes/${id}`, { method: 'DELETE' });
+    const list = await api(`/incidents/${currentIncident}/notes`);
+    renderNotes(list);
+}
+
+// ── Render: Action Items ──
+function renderActions(list) {
+    const el = document.getElementById('actionsList');
+    if (!list || !list.length) { el.innerHTML = '<div class="text-sm text-slate-500">No action items</div>'; return; }
+    const isAdmin = userRole === 'admin';
+    el.innerHTML = list.map(a => `
+        <div class="p-2 rounded bg-[#f1f5f9] flex items-start gap-2">
+            <input type="checkbox" ${a.status === 'completed' ? 'checked' : ''} ${isAdmin ? `onchange="toggleAction('${a.id}', this.checked)"` : 'disabled'} class="mt-1">
+            <div class="flex-1">
+                <p class="text-sm ${a.status === 'completed' ? 'line-through text-slate-500' : ''}">${escapeHtml(a.description)}</p>
+                <span class="text-xs text-slate-500">${a.team ? escapeHtml(a.team) + ' · ' : ''}${escapeHtml(a.assignee || 'Unassigned')}</span>
+            </div>
+            ${isAdmin ? `<button class="text-xs text-slate-500 hover:text-red-400" onclick="deleteAction('${a.id}')">✕</button>` : ''}
+        </div>
+    `).join('');
+}
+async function addAction() {
+    const data = { description: document.getElementById('actionDesc').value, team: document.getElementById('actionTeam').value, assignee: document.getElementById('actionAssignee').value };
+    if (!data.description) return;
+    await api(`/incidents/${currentIncident}/actions`, { method: 'POST', body: JSON.stringify(data) });
+    document.getElementById('actionDesc').value = '';
+    const list = await api(`/incidents/${currentIncident}/actions`);
+    renderActions(list);
+}
+async function toggleAction(id, completed) {
+    await api(`/incidents/${currentIncident}/actions/${id}`, { method: 'PATCH', body: JSON.stringify({ status: completed ? 'completed' : 'open' }) });
+    const list = await api(`/incidents/${currentIncident}/actions`);
+    renderActions(list);
+}
+async function deleteAction(id) {
+    await api(`/incidents/${currentIncident}/actions/${id}`, { method: 'DELETE' });
+    const list = await api(`/incidents/${currentIncident}/actions`);
+    renderActions(list);
+}
+
+// ── Render: Changes ──
+function renderChanges(list) {
+    const el = document.getElementById('changesList');
+    if (!list || !list.length) { el.innerHTML = '<div class="text-sm text-slate-500">No changes recorded</div>'; return; }
+    const isAdmin = userRole === 'admin';
+    el.innerHTML = list.map(c => `
+        <div class="p-2 rounded bg-[#f1f5f9] flex justify-between">
+            <div>
+                <p class="text-sm">${c.description}</p>
+                <span class="text-xs text-slate-500">${c.owner_team ? c.owner_team + ' · ' : ''}${c.assignee || ''} · ${timeAgo(c.timestamp)}</span>
+            </div>
+            ${isAdmin ? `<button class="text-xs text-slate-500 hover:text-red-400" onclick="deleteChange('${c.id}')">✕</button>` : ''}
+        </div>
+    `).join('');
+}
+
+function renderScheduledChanges(list) {
+    const el = document.getElementById('snChangesList');
+    if (!list || !list.length) { el.innerHTML = '<div class="text-sm text-slate-500">No scheduled changes found</div>'; return; }
+    el.innerHTML = list.map(c => `
+        <div class="p-2 rounded bg-[#f1f5f9] border-l-2 border-purple-500">
+            <div class="flex items-center gap-2 mb-1">
+                <span class="text-xs font-medium text-purple-600">${c.number}</span>
+                <span class="badge badge-amber text-[10px]">${c.state || 'Scheduled'}</span>
+                ${c.risk ? `<span class="badge ${c.risk === 'High' ? 'badge-red' : c.risk === 'Medium' ? 'badge-amber' : 'badge-green'} text-[10px]">Risk: ${c.risk}</span>` : ''}
+            </div>
+            <p class="text-sm">${c.short_description || 'No description'}</p>
+            <div class="text-xs text-slate-500 mt-1">
+                ${c.start_date ? 'Start: ' + c.start_date : ''} ${c.end_date ? '→ End: ' + c.end_date : ''}
+            </div>
+            <div class="text-xs text-slate-500">
+                ${c.assignment_group ? 'Group: ' + c.assignment_group : ''} ${c.assigned_to ? '· ' + c.assigned_to : ''}
+                ${c.cmdb_ci ? '· CI: ' + c.cmdb_ci : ''}
+            </div>
+        </div>
+    `).join('');
+}
+
+async function loadScheduledChanges() {
+    if (!currentIncident) return;
+    try {
+        const changes = await api(`/incidents/${currentIncident}/changes/scheduled`);
+        renderScheduledChanges(changes);
+    } catch (e) {
+        document.getElementById('snChangesList').innerHTML = '<div class="text-sm text-slate-500">Could not fetch scheduled changes</div>';
+    }
+}
+async function addChange() {
+    const data = { description: document.getElementById('changeDesc').value, owner_team: document.getElementById('changeTeam').value, assignee: document.getElementById('changeAssignee').value };
+    if (!data.description) return;
+    await api(`/incidents/${currentIncident}/changes`, { method: 'POST', body: JSON.stringify(data) });
+    document.getElementById('changeDesc').value = '';
+    const list = await api(`/incidents/${currentIncident}/changes`);
+    renderChanges(list);
+}
+async function deleteChange(id) {
+    await api(`/incidents/${currentIncident}/changes/${id}`, { method: 'DELETE' });
+    const list = await api(`/incidents/${currentIncident}/changes`);
+    renderChanges(list);
+}
+
+// ── Tabs ──
+function switchTab(name) {
+    document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
+    document.querySelectorAll('.tab-content').forEach(c => c.classList.add('hidden'));
+    document.getElementById('tab-' + name).classList.remove('hidden');
+}
+
+// ── Render: Vendor ──
+function renderVendor(v) {
+    const el = document.getElementById('vendorPanel');
+    if (!v || !v.vendor_name) { el.innerHTML = '<div class="text-sm text-slate-500">No vendor information linked to this incident in ServiceNow</div>'; return; }
+    el.innerHTML = `
+        <div class="space-y-2">
+            <div class="font-medium">${v.vendor_name}</div>
+            ${v.account_manager ? `<div class="text-slate-600">Account Manager: ${v.account_manager}</div>` : ''}
+            ${v.support_email ? `<div class="text-slate-600">📧 ${v.support_email}</div>` : ''}
+            ${v.support_phone ? `<div class="text-slate-600">📞 ${v.support_phone}</div>` : ''}
+            ${v.emergency_line ? `<div class="text-red-400">🚨 Emergency: ${v.emergency_line}</div>` : ''}
+            ${v.support_hours ? `
+                <div class="separator"></div>
+                <div class="text-xs space-y-1">
+                    <div class="font-medium text-slate-700">Support Hours</div>
+                    <div class="text-slate-600">Weekday: ${v.support_hours.weekday}</div>
+                    <div class="text-slate-600">Weekend: ${v.support_hours.weekend}</div>
+                    <div class="text-slate-600">Emergency: ${v.support_hours.emergency}</div>
+                </div>
+            ` : ''}
+            ${v.sla_terms && v.sla_terms.length ? `
+                <div class="separator"></div>
+                <div class="text-xs space-y-1">
+                    <div class="font-medium text-slate-700">SLA Terms</div>
+                    ${v.sla_terms.map(s => `<div class="text-slate-600">${s.priority}: Response ${s.response_time} / Resolution ${s.resolution_time}</div>`).join('')}
+                </div>
+            ` : ''}
+            ${v.uptime_guarantee ? `<div class="text-xs text-slate-600">Uptime: ${v.uptime_guarantee}</div>` : ''}
+            ${v.contract_expiry ? `<div class="text-xs text-slate-600">Contract expires: ${v.contract_expiry}</div>` : ''}
+        </div>
+    `;
+}
+
+// ── Render: Priority Tracker ──
+function renderPriority(list) {
+    const el = document.getElementById('priorityTracker');
+    if (!list || !list.length) { el.innerHTML = '<div class="text-sm text-slate-500">No priority changes recorded</div>'; return; }
+    el.innerHTML = `
+        <div class="flex items-center gap-2 flex-wrap">
+            ${list.map((c, i) => `
+                ${i > 0 ? '<span class="text-slate-500">→</span>' : ''}
+                <div class="text-center">
+                    ${priorityBadge(c.to_priority)}
+                    <div class="text-[10px] text-slate-500 mt-0.5">${timeAgo(c.changed_at)}</div>
+                </div>
+            `).join('')}
+        </div>
+    `;
+}
+
+// ── Render: Handover ──
+async function renderHandover() {
+    const el = document.getElementById('handoverPanel');
+    try {
+        const data = await api(`/incidents/${currentIncident}/handover`);
+        el.innerHTML = `
+            <div class="space-y-2">
+                <div class="text-sm">Current Owner: <span class="font-medium text-blue-400">${data.current_owner}</span></div>
+                <button class="btn btn-ghost btn-sm w-full" onclick="document.getElementById('handoverModal').classList.remove('hidden')">Transfer Ownership</button>
+                ${data.history && data.history.length ? `
+                    <div class="separator"></div>
+                    <div class="text-xs text-slate-500">History:</div>
+                    ${data.history.map(h => `<div class="text-xs text-slate-600">${h.from_manager} → ${h.to_manager} · ${timeAgo(h.transferred_at)}</div>`).join('')}
+                ` : ''}
+            </div>
+        `;
+    } catch { el.innerHTML = '<div class="text-sm text-slate-500">Unable to load</div>'; }
+}
+
+async function doHandover() {
+    const target = document.getElementById('handoverTarget').value;
+    if (!target) { alert('Please search and select a valid ServiceNow user'); return; }
+    const checklist = {
+        status_reviewed: document.getElementById('hc1').checked,
+        actions_transferred: document.getElementById('hc2').checked,
+        stakeholder_comms_shared: document.getElementById('hc3').checked,
+        vendor_status_confirmed: document.getElementById('hc4').checked,
+        escalation_points_identified: document.getElementById('hc5').checked,
+    };
+    try {
+        await api(`/incidents/${currentIncident}/handover`, { method: 'POST', body: JSON.stringify({ target_manager: target, checklist }) });
+        document.getElementById('handoverModal').classList.add('hidden');
+        renderHandover();
+        loadDashboard(); // Refresh to show updated assigned_to
+    } catch (e) { alert(e.message); }
+}
+
+// ── User Search for Handover ──
+let _searchTimeout = null;
+function searchHandoverUser(query) {
+    const resultsEl = document.getElementById('handoverUserResults');
+    const validEl = document.getElementById('handoverUserValid');
+    const confirmBtn = document.getElementById('handoverConfirmBtn');
+    confirmBtn.disabled = true;
+    validEl.classList.add('hidden');
+
+    if (!query || query.length < 2) {
+        resultsEl.classList.add('hidden');
+        return;
+    }
+    clearTimeout(_searchTimeout);
+    _searchTimeout = setTimeout(async () => {
+        try {
+            const users = await api(`/users/search?q=${encodeURIComponent(query)}`);
+            if (!users || !users.length) {
+                resultsEl.innerHTML = '<div class="p-2 text-sm text-slate-500">No users found in ServiceNow</div>';
+                resultsEl.classList.remove('hidden');
+                validEl.innerHTML = '<span class="text-red-500">⚠ User not found in ServiceNow</span>';
+                validEl.classList.remove('hidden');
+                return;
+            }
+            resultsEl.innerHTML = users.map(u => `
+                <div class="p-2 hover:bg-[#f1f5f9] cursor-pointer border-b border-[#e2e8f0] last:border-0" onclick="selectHandoverUser('${u.name.replace(/'/g, "\\'")}')">
+                    <div class="text-sm font-medium">${u.name}</div>
+                    <div class="text-xs text-slate-500">${u.title || 'No title'} ${u.email ? '· ' + u.email : ''}</div>
+                </div>
+            `).join('');
+            resultsEl.classList.remove('hidden');
+        } catch (e) {
+            resultsEl.innerHTML = '<div class="p-2 text-sm text-red-500">Search failed</div>';
+            resultsEl.classList.remove('hidden');
+        }
+    }, 300);
+}
+function selectHandoverUser(name) {
+    document.getElementById('handoverTarget').value = name;
+    document.getElementById('handoverUserResults').classList.add('hidden');
+    const validEl = document.getElementById('handoverUserValid');
+    validEl.innerHTML = '<span class="text-green-500">✓ Valid ServiceNow user</span>';
+    validEl.classList.remove('hidden');
+    document.getElementById('handoverConfirmBtn').disabled = false;
+}
+
+// ── Resolution ──
+function renderResolution(r) {
+    const el = document.getElementById('resolutionPanel');
+    if (r) {
+        el.innerHTML = `
+            <div class="space-y-2 text-sm">
+                <div class="badge badge-green">Resolved</div>
+                <p class="text-slate-600">${r.summary || ''}</p>
+                ${r.problem_ticket ? `<div class="text-xs text-slate-500">Problem: ${r.problem_ticket}</div>` : ''}
+                ${r.confluence_url ? `<div class="text-xs"><a href="${r.confluence_url}" class="text-blue-400 hover:underline" target="_blank">View PIR →</a></div>` : ''}
+            </div>
+        `;
+    } else {
+        el.innerHTML = '<button class="btn btn-danger w-full" onclick="showResolveModal()" id="resolveBtn">Resolve Incident</button>';
+    }
+}
+
+function showResolveModal() { document.getElementById('resolveModal').classList.remove('hidden'); }
+
+async function generateSummary() {
+    try {
+        // Get transcript from file upload or textarea
+        let transcript = '';
+        const fileInput = document.getElementById('transcriptFile');
+        const textInput = document.getElementById('transcriptText');
+
+        if (fileInput.files && fileInput.files.length > 0) {
+            transcript = await fileInput.files[0].text();
+        } else if (textInput.value.trim()) {
+            transcript = textInput.value.trim();
+        }
+
+        if (!transcript) {
+            alert('Please upload a transcript file or paste the transcript text.');
+            return;
+        }
+
+        const summary = await api(`/incidents/${currentIncident}/resolution/generate`, {
+            method: 'POST',
+            body: JSON.stringify({ transcript }),
+        });
+        const el = document.getElementById('aiSummary');
+        el.classList.remove('hidden');
+        // Populate editable fields
+        document.getElementById('aiSummaryText').value = summary.summary || '';
+        document.getElementById('aiRootCause').value = summary.root_cause || '';
+        document.getElementById('aiActionsTaken').value = (summary.actions_taken || []).map(a => `${a.time}: ${a.action}`).join('\n');
+        document.getElementById('aiProblemTicket').value = summary.problem_ticket || '';
+    } catch (e) { alert('Failed: ' + e.message); }
+}
+
+async function resolveIncident() {
+    // Guard: require explicit confirmation checkbox
+    const confirmBox = document.getElementById('confirmResolve');
+    if (confirmBox && !confirmBox.checked) {
+        alert('Please confirm the incident is fully resolved before proceeding.');
+        return;
+    }
+    if (!confirm('Are you sure you want to resolve this incident in ServiceNow? This will update the incident status to Resolved.')) return;
+    try {
+        // Include AI summary edits in resolution notes if generated
+        let notes = document.getElementById('resolveNotes').value;
+        const aiSummary = document.getElementById('aiSummaryText');
+        if (aiSummary && aiSummary.value.trim()) {
+            const rootCause = document.getElementById('aiRootCause').value.trim();
+            const actions = document.getElementById('aiActionsTaken').value.trim();
+            notes += '\n\n--- AI Summary (Reviewed) ---\n' + aiSummary.value.trim();
+            if (rootCause) notes += '\n\nRoot Cause: ' + rootCause;
+            if (actions) notes += '\n\nActions Taken:\n' + actions;
+        }
+        if (!notes || !notes.trim()) {
+            alert('Resolution notes are required.');
+            return;
+        }
+        await api(`/incidents/${currentIncident}/resolve`, {
+            method: 'POST',
+            body: JSON.stringify({ resolution_notes: notes, close_code: document.getElementById('resolveCode').value }),
+        });
+        // Try to publish to confluence (non-blocking)
+        let confluenceUrl = 'N/A';
+        try {
+            const pub = await api(`/incidents/${currentIncident}/resolution/publish`, { method: 'POST' });
+            confluenceUrl = pub.confluence_url || 'N/A';
+        } catch (e) {
+            console.warn('Confluence publish skipped:', e.message);
+        }
+        document.getElementById('resolveModal').classList.add('hidden');
+        alert('Incident resolved successfully!' + (confluenceUrl !== 'N/A' ? ' Confluence: ' + confluenceUrl : ''));
+        loadDashboard();
+    } catch (e) { alert('Error: ' + e.message); }
+}
+
+// ── Enter key handlers ──
+document.getElementById('noteInput').addEventListener('keydown', e => { if (e.key === 'Enter') addNote(); });
+
+// ── Init ──
+refreshIncidentList().then(() => {
+    // Auto-load incident from URL query parameter (e.g., /dashboard?incident=INC0000049)
+    const params = new URLSearchParams(window.location.search);
+    const incidentFromUrl = params.get('incident');
+    if (incidentFromUrl) {
+        const sel = document.getElementById('incidentSelect');
+        // Set the value if it exists in dropdown, or add it
+        let found = false;
+        for (const opt of sel.options) {
+            if (opt.value === incidentFromUrl) { found = true; break; }
+        }
+        if (!found) {
+            const opt = document.createElement('option');
+            opt.value = incidentFromUrl;
+            opt.text = incidentFromUrl;
+            sel.add(opt);
+        }
+        sel.value = incidentFromUrl;
+        loadDashboard();
+    }
+});
+</script>
+</body>
+</html>

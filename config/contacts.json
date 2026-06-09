@@ -1,0 +1,43 @@
+{
+    "distribution_lists": [
+        {
+            "name": "Incident Management Team",
+            "emails": ["im-team@example.com"]
+        },
+        {
+            "name": "Leadership / Executives",
+            "emails": ["leadership@example.com"]
+        },
+        {
+            "name": "Service Desk",
+            "emails": ["servicedesk@example.com"]
+        }
+    ],
+    "contacts": [
+        {
+            "name": "Prashanth Korthiwada",
+            "email": "prashanth.korthiwada@gmail.com",
+            "role": "Incident Manager"
+        },
+        {
+            "name": "IT Operations",
+            "email": "it-ops@example.com",
+            "role": "Operations Lead"
+        },
+        {
+            "name": "Service Owner",
+            "email": "service-owner@example.com",
+            "role": "Service Owner"
+        },
+        {
+            "name": "Change Manager",
+            "email": "change-manager@example.com",
+            "role": "Change Manager"
+        },
+        {
+            "name": "VP Engineering",
+            "email": "vp-engineering@example.com",
+            "role": "Executive"
+        }
+    ]
+}
