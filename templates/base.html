@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{{ title or 'Auth App' }}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}" />
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="{{ url_for('index') }}">Auth App</a>
+      <nav>
+        {% if current_user %}
+          <a href="{{ url_for('dashboard') }}">Dashboard</a>
+          <form method="post" action="{{ url_for('logout') }}" class="inline-form">
+            <button type="submit" class="link-button">Sign out</button>
+          </form>
+        {% else %}
+          <a href="{{ url_for('login') }}">Sign in</a>
+          <a href="{{ url_for('signup') }}">Create account</a>
+        {% endif %}
+      </nav>
+    </header>
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <div class="flash-wrap">
+          {% for category, message in messages %}
+            <div class="flash flash-{{ category }}">{{ message }}</div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+    {% block content %}{% endblock %}
+  </body>
+</html>

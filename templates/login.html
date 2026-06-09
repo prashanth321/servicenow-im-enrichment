@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% set title = "Sign In" %}
+{% block content %}
+<main class="page">
+  <section class="card-grid">
+    <div class="panel-left">
+      <h1>Welcome back</h1>
+      <p>Sign in to continue managing your workspace, projects, and team activity.</p>
+      <ul>
+        <li>Secure account access</li>
+        <li>Team and project visibility</li>
+        <li>Fast, responsive dashboard</li>
+      </ul>
+    </div>
+
+    <div class="panel-right">
+      <div class="form-shell">
+        <h2>Sign in</h2>
+        <p class="sub">Use your email and password to access your account.</p>
+
+        <form method="post" class="auth-form" novalidate>
+          <label for="email">Email</label>
+          <input id="email" name="email" type="email" autocomplete="email" required placeholder="name@company.com" />
+
+          <div class="label-row">
+            <label for="password">Password</label>
+            <a href="{{ url_for('forgot_password') }}">Forgot password?</a>
+          </div>
+          <input id="password" name="password" type="password" autocomplete="current-password" required minlength="8" placeholder="Enter your password" />
+
+          <button type="submit">Sign in</button>
+        </form>
+
+        <p class="meta">New here? <a href="{{ url_for('signup') }}">Create an account</a></p>
+      </div>
+    </div>
+  </section>
+</main>
+{% endblock %}

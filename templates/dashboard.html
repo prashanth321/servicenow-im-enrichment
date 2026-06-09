@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% set title = "Dashboard" %}
+{% block content %}
+<main class="page-simple">
+  <section class="reset-card">
+    <h1>Dashboard</h1>
+    <p>You are signed in as <strong>{{ current_user['email'] }}</strong>.</p>
+
+    <form method="post" action="{{ url_for('logout') }}" class="auth-form">
+      <button type="submit">Sign out</button>
+    </form>
+  </section>
+</main>
+{% endblock %}
