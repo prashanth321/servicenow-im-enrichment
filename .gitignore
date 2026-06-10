@@ -1,7 +1,7 @@
 # Environment variables (contains secrets)
 .env
 sn.env
-*.example
+# Note: .env.example is NOT ignored - it should be committed for deployment reference
 
 # Python
 __pycache__/
